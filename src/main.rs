@@ -1,7 +1,13 @@
 mod app;
 mod config;
 mod backend;
+mod twilight_client;
 
+
+/*#[tokio::main]
+async fn main() {
+    twilight_client::run_client().await;
+}*/
 
 fn main() {
     #[cfg(feature = "sdl_backend")]

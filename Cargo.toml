@@ -18,8 +18,13 @@ egui_extras = { version = "0.23.0", features = ["image", "http"] }
 image = { version = "0.24", features = ["jpeg", "png"] }
 serde_json = "1.0.107"
 serde = { version = "1.0", features = ["derive"] }
+twilight-gateway        = { version = "0.15.2", default-features = false, features = ["native", "zlib-simd", "twilight-http"]  }
+twilight-http           = { version = "0.15.2", default-features = false, features = ["native"]  }
+twilight-model          = { version = "0.15.2" }
+twilight-util           = { version = "0.15.2", default-features = false, features = ["snowflake"] }
+tokio = { version = "1.0.0", features = ["rt", "rt-multi-thread", "macros"] }
 
 [features]
-default = [ "sdl_backend" ]
+default = [ "eframe_backend" ]
 sdl_backend = [ "dep:sdl2", "dep:gl", "dep:ahash" ]
 eframe_backend = [ "dep:eframe" ]
