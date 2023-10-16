@@ -1,0 +1,5 @@
+.idea
+Cargo.lock
+/target
+*.iml
+res/config.json
