@@ -2,12 +2,15 @@ use crate::config::Config;
 
 use egui;
 use egui::scroll_area::ScrollBarVisibility;
-use egui::Visuals;
+use egui::{Align, Layout, Vec2, Visuals};
+use twilight_http::Client;
+use crate::discord::twilight_client;
 
 pub struct MovieApp {
     input_text: String,
     current_server: String,
     current_channel: String,
+    config: Config,
 }
 
 impl MovieApp {
@@ -21,7 +24,8 @@ impl MovieApp {
         Self {
             input_text: "".into(),
             current_server: "Socialites".into(),
-            current_channel: "general".into()
+            current_channel: "general".into(),
+            config,
         }
     }
 
@@ -55,8 +59,8 @@ impl MovieApp {
     pub fn render(&mut self, ctx: &egui::Context) {
         self.server_panel(ctx); //left most
         self.channels_panel(ctx); //left inner
-        self.chat_panel(ctx); //middle
         self.member_panel(ctx); //right most
+        self.chat_panel(ctx); //middle
     }
 }
 
@@ -78,17 +82,30 @@ impl MovieApp {
             });
         });
     }
-    pub fn chat_panel(&self, ctx:  &egui::Context){
+    pub fn chat_panel(&mut self, ctx:  &egui::Context){
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.heading(&self.current_channel);
             ui.separator();
-            egui::ScrollArea::vertical()
-                .scroll_bar_visibility(ScrollBarVisibility::VisibleWhenNeeded)
-                .auto_shrink([false, false])
-                .show(ui, |ui| { //show_rows
-                for i in 0..100 {
-                    ui.label(format!("messsage{}", i));
+            ui.with_layout(Layout::bottom_up(Align::Min), |ui| {
+                let input_field = egui::TextEdit::singleline(&mut self.input_text)
+                    .min_size(Vec2::new(10.0, 10.0))
+                    .hint_text("Message");
+
+                let response = ui.add(input_field);
+                let pressed_enter = ui.input(|i| i.key_pressed(egui::Key::Enter));
+
+                if response.lost_focus() && pressed_enter {
+                    println!("Sending message: {}", self.input_text);
                 }
+
+                egui::ScrollArea::vertical()
+                    .scroll_bar_visibility(ScrollBarVisibility::VisibleWhenNeeded)
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| { //show_rows
+                        for i in 0..100 {
+                            ui.label(format!("message{}", i));
+                        }
+                    });
             });
         });
     }

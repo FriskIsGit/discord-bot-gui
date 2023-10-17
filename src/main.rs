@@ -1,15 +1,17 @@
-mod app;
+use crate::config::Config;
+use crate::discord::twilight_client;
+
+mod discord;
 mod config;
+mod app;
 mod backend;
-mod twilight_client;
 
-
-/*#[tokio::main]
+#[tokio::main]
 async fn main() {
-    twilight_client::run_client().await;
-}*/
+    let config = Config::read_config("res/config.json");
+    twilight_client::test(config.token).await;
+    println!("Finished");
 
-fn main() {
     #[cfg(feature = "sdl_backend")]
     backend::sdl_backend::run_app();
 
