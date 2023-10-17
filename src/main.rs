@@ -6,10 +6,8 @@ mod config;
 mod app;
 mod backend;
 
-#[tokio::main]
-async fn main() {
-    let config = Config::read_config("res/config.json");
-    twilight_client::test(config.token).await;
+fn main() {
+    // let config = Config::read_config("res/config.json");
     println!("Finished");
 
     #[cfg(feature = "sdl_backend")]

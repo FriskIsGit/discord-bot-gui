@@ -5,8 +5,10 @@ use egui::scroll_area::ScrollBarVisibility;
 use egui::{Align, Label, Layout, Sense, Vec2, Visuals};
 use twilight_http::Client;
 use crate::discord::twilight_client;
+use tokio::runtime;
 
 pub struct MovieApp {
+    tokio: runtime::Runtime, 
     input_text: String,
     current_server: String,
     current_channel: String,
@@ -22,7 +24,13 @@ impl MovieApp {
         // Implement dynamic scale changing?
         ctx.set_pixels_per_point(1.66);
 
+        let tokio_runtime = runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+
         Self {
+            tokio: tokio_runtime,
             input_text: "".into(),
             current_server: "Socialites".into(),
             current_channel: "#general".into(),
@@ -32,6 +40,12 @@ impl MovieApp {
     }
 
     pub fn setup(&mut self) {
+        // REMOVE ME:
+        let token = self.config.token.clone();
+        self.tokio.spawn(async move {
+            twilight_client::test(token).await;
+        });
+
         // Start with the default fonts (we will be adding to them rather than replacing them).
         let mut fonts = egui::FontDefinitions::default();
 
