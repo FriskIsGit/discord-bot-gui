@@ -2,7 +2,7 @@ use crate::config::Config;
 
 use egui;
 use egui::scroll_area::ScrollBarVisibility;
-use egui::{Align, Layout, Vec2, Visuals};
+use egui::{Align, Label, Layout, Sense, Vec2, Visuals};
 use twilight_http::Client;
 use crate::discord::twilight_client;
 
@@ -10,6 +10,7 @@ pub struct MovieApp {
     input_text: String,
     current_server: String,
     current_channel: String,
+    draw_type: DrawMode,
     config: Config,
 }
 
@@ -24,7 +25,8 @@ impl MovieApp {
         Self {
             input_text: "".into(),
             current_server: "Socialites".into(),
-            current_channel: "general".into(),
+            current_channel: "#general".into(),
+            draw_type: DrawMode::Servers,
             config,
         }
     }
@@ -57,28 +59,56 @@ impl MovieApp {
     }
 
     pub fn render(&mut self, ctx: &egui::Context) {
-        self.server_panel(ctx); //left most
-        self.channels_panel(ctx); //left inner
+        self.left_most_panel(ctx);
+        self.left_inner_panel(ctx);
         self.member_panel(ctx); //right most
         self.chat_panel(ctx); //middle
     }
 }
 
 impl MovieApp {
-    pub fn server_panel(&self, ctx:  &egui::Context){
+    pub fn left_most_panel(&mut self, ctx:  &egui::Context){
         egui::SidePanel::left("server_panel").show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                if ui.button("Friends").clicked() {
+                    self.draw_type = DrawMode::Friends;
+                }
+                if ui.button("Servers").clicked() {
+                    self.draw_type = DrawMode::Servers;
+                }
+            });
+            ui.separator();
             ui.vertical(|ui| {
+                match self.draw_type {
+                    DrawMode::Friends => {
+                        for i in 0..35 {
+                            ui.label(format!("friends{}", i));
+                        }
+                    }
+                    DrawMode::Servers => {
+                        for i in 0..15 {
+                            ui.label(format!("server{}", i));
+                        }
+                    }
+                }
 
             });
         });
 
     }
-    pub fn channels_panel(&self, ctx:  &egui::Context){
+    pub fn left_inner_panel(&self, ctx:  &egui::Context){
         egui::SidePanel::left("channel_panel").show(ctx, |ui| {
             ui.heading(&self.current_server);
             ui.separator();
             ui.vertical(|ui| {
-
+                for i in 0..10 {
+                    let name = format!("text_channel{}", i);
+                    let response = ui.add(Label::new(name).sense(Sense::click()));
+                }
+                for i in 0..5 {
+                    let name = format!("voice_channel{}", i);
+                    let response = ui.add(Label::new(name).sense(Sense::click()));
+                }
             });
         });
     }
@@ -118,4 +148,6 @@ impl MovieApp {
     }
 }
 
-
+enum DrawMode{
+    Friends, Servers
+}
