@@ -6,9 +6,10 @@ use egui::scroll_area::ScrollBarVisibility;
 use egui::{Align, Label, Layout, Sense, Vec2, Visuals};
 use twilight_http::Client;
 use tokio::runtime;
-use twilight_model::user::CurrentUserGuild;
+use twilight_model::channel::Channel;
 use crate::discord::twilight_client;
 use crate::discord::fetch::Fetch;
+use crate::discord::guild::Server;
 
 pub struct DiscordApp {
     tokio: runtime::Runtime, 
@@ -16,8 +17,14 @@ pub struct DiscordApp {
     current_server: String,
     current_channel: String,
     draw_type: DrawMode,
-    servers_fetch: Fetch<Vec<CurrentUserGuild>>,
-    servers: Vec<CurrentUserGuild>,
+
+    selected_server_id: Option<u64>,
+    servers_fetch: Fetch<Vec<Server>>,
+    servers: Vec<Server>,
+
+    channels_fetch: Fetch<(Vec<Channel>, Vec<Channel>)>,
+    channels: (Vec<Channel>, Vec<Channel>),
+
     client: Arc<Client>,
     config: Config,
 }
@@ -43,6 +50,11 @@ impl DiscordApp {
             draw_type: DrawMode::Servers,
             servers_fetch: Fetch::new(),
             servers: Vec::new(),
+
+            channels_fetch: Fetch::new(),
+            channels: (Vec::new(), Vec::new()),
+            selected_server_id: None,
+
             client: Arc::new(twilight_client::create_client(config.token.clone())),
             config,
         }
@@ -81,6 +93,40 @@ impl DiscordApp {
         self.left_inner_panel(ctx);
         self.member_panel(ctx); //right most
         self.chat_panel(ctx); //middle
+
+    }
+
+    pub fn events(&mut self) {
+        if self.servers_fetch.start() {
+            let client = self.client.clone();
+            let sender = self.servers_fetch.sender();
+            self.tokio.spawn( async move {
+                let guilds = twilight_client::get_connected_servers(&client).await;
+                sender.send(guilds).expect("Receiver deallocated?");
+            });
+        }
+
+        let received = self.servers_fetch.receive();
+        if received.is_some() {
+            self.servers = received.unwrap();
+        }
+
+        //fetch channels
+        if self.selected_server_id.is_some() && self.channels_fetch.start() {
+            let channel_id = self.selected_server_id.unwrap();
+            let client = self.client.clone();
+            let sender = self.channels_fetch.sender();
+            self.tokio.spawn( async move {
+                let channels = twilight_client::get_channels(&client, channel_id).await;
+                let split_channels = twilight_client::split_into_text_and_voice(channels);
+                sender.send(split_channels).expect("Receiver deallocated?");
+            });
+        }
+
+        let received = self.channels_fetch.receive();
+        if received.is_some() {
+            self.channels = received.unwrap();
+        }
     }
 }
 
@@ -105,22 +151,14 @@ impl DiscordApp {
                         }
                     }
                     DrawMode::Servers => {
-                        if self.servers_fetch.start() {
-                            let client = self.client.clone();
-                            let sender = self.servers_fetch.sender();
-                            self.tokio.spawn( async move {
-                                let guilds = twilight_client::get_connected_guilds(&client).await;
-                                sender.send(guilds).expect("Receiver deallocated?");
-                            });
-                        }
-
-                        let received = self.servers_fetch.receive();
-                        if received.is_some() {
-                            self.servers = received.unwrap();
-                        }
-
                         for server in &self.servers {
-                            ui.label(format!("{}", server.name));
+                            let response = ui.add(Label::new(&server.name)
+                                .sense(Sense::click()));
+                            if response.clicked() {
+                                self.channels_fetch.request();
+                                self.selected_server_id = Some(server.id);
+                                self.current_server = server.name.clone();
+                            }
                         }
                     }
                 }
@@ -134,12 +172,12 @@ impl DiscordApp {
             ui.heading(&self.current_server);
             ui.separator();
             ui.vertical(|ui| {
-                for i in 0..10 {
-                    let name = format!("text_channel{}", i);
+                for text in &self.channels.0 {
+                    let name = &text.name.to_owned().unwrap();
                     let response = ui.add(Label::new(name).sense(Sense::click()));
                 }
-                for i in 0..5 {
-                    let name = format!("voice_channel{}", i);
+                for voice in &self.channels.1 {
+                    let name = &voice.name.to_owned().unwrap();
                     let response = ui.add(Label::new(name).sense(Sense::click()));
                 }
             });

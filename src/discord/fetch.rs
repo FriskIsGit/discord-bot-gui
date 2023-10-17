@@ -28,6 +28,7 @@ impl<T> Fetch<T> {
         return false;
     }
 
+    //requesting execution from UI but passing execution to elsewhere
     pub fn request(&mut self) {
         self.requested = true;
         self.in_progress = false;
@@ -45,11 +46,12 @@ impl<T> Fetch<T> {
         self.in_progress
     }
 
-    pub fn receive(&self) -> Option<T>{
+    pub fn receive(&mut self) -> Option<T>{
         if self.requested || !self.in_progress {
             return None;
         }
         return if let Ok(value) = self.receiver.try_recv() {
+            self.in_progress = false;
             Some(value)
         } else {
             None

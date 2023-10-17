@@ -1,9 +1,13 @@
+use serde::{Deserialize, Deserializer, Serialize};
 use twilight_model::channel::Channel;
-use twilight_model::guild::{Member, Permissions};
+use twilight_model::guild::{Permissions};
+use twilight_model::id::Id;
+use twilight_model::id::marker::GuildMarker;
 use twilight_model::user::CurrentUserGuild;
 use twilight_model::util::ImageHash;
 use twilight_util::snowflake::Snowflake;
 
+#[derive(Debug, Clone)]
 pub struct Server {
     pub id: u64,
     pub name: String,
@@ -29,8 +33,10 @@ impl Server{
             voice_channels: vec![],
         }
     }
+    pub fn prefetch(&self) {
+    }
 
-    pub fn prefetch(&self){
-
+    pub fn id_marker(&self) -> Id<GuildMarker> {
+        Id::new(self.id)
     }
 }
