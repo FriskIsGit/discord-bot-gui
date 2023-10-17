@@ -420,7 +420,7 @@ pub fn run_app() {
 
     use std::time::Instant;
     use crate::config::Config;
-    use crate::app::MovieApp;
+    use crate::app::DiscordApp;
 
     const SCREEN_WIDTH: u32 = 800;
     const SCREEN_HEIGHT: u32 = 600;
@@ -456,8 +456,8 @@ pub fn run_app() {
     println!("Running!");
     egui_extras::install_image_loaders(&egui_context);
     let config = Config::read_config("res/config.json");
-    let mut movie_app = MovieApp::new(&egui_context, config);
-    movie_app.setup();
+    let mut discord_app = DiscordApp::new(&egui_context, config);
+    discord_app.setup();
 
     'running: loop {
         if enable_vsync {
@@ -481,7 +481,7 @@ pub fn run_app() {
         egui_state.input.time = Some(start_time.elapsed().as_secs_f64());
         egui_context.begin_frame(egui_state.input.take());
 
-        movie_app.render(&egui_context);
+        discord_app.render(&egui_context);
 
         let FullOutput {
             platform_output,

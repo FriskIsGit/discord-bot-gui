@@ -1,22 +1,28 @@
+use std::sync::Arc;
 use crate::config::Config;
 
 use egui;
 use egui::scroll_area::ScrollBarVisibility;
 use egui::{Align, Label, Layout, Sense, Vec2, Visuals};
 use twilight_http::Client;
-use crate::discord::twilight_client;
 use tokio::runtime;
+use twilight_model::user::CurrentUserGuild;
+use crate::discord::twilight_client;
+use crate::discord::fetch::Fetch;
 
-pub struct MovieApp {
+pub struct DiscordApp {
     tokio: runtime::Runtime, 
     input_text: String,
     current_server: String,
     current_channel: String,
     draw_type: DrawMode,
+    servers_fetch: Fetch<Vec<CurrentUserGuild>>,
+    servers: Vec<CurrentUserGuild>,
+    client: Arc<Client>,
     config: Config,
 }
 
-impl MovieApp {
+impl DiscordApp {
     pub fn new(ctx: &egui::Context, config: Config) -> Self {
         let visuals = Visuals::dark();
         ctx.set_visuals(visuals);
@@ -35,16 +41,14 @@ impl MovieApp {
             current_server: "Socialites".into(),
             current_channel: "#general".into(),
             draw_type: DrawMode::Servers,
+            servers_fetch: Fetch::new(),
+            servers: Vec::new(),
+            client: Arc::new(twilight_client::create_client(config.token.clone())),
             config,
         }
     }
 
     pub fn setup(&mut self) {
-        // REMOVE ME:
-        let token = self.config.token.clone();
-        self.tokio.spawn(async move {
-            twilight_client::test(token).await;
-        });
 
         // Start with the default fonts (we will be adding to them rather than replacing them).
         let mut fonts = egui::FontDefinitions::default();
@@ -80,7 +84,7 @@ impl MovieApp {
     }
 }
 
-impl MovieApp {
+impl DiscordApp {
     pub fn left_most_panel(&mut self, ctx:  &egui::Context){
         egui::SidePanel::left("server_panel").show(ctx, |ui| {
             ui.horizontal(|ui| {
@@ -89,6 +93,7 @@ impl MovieApp {
                 }
                 if ui.button("Servers").clicked() {
                     self.draw_type = DrawMode::Servers;
+                    self.servers_fetch.request();
                 }
             });
             ui.separator();
@@ -100,8 +105,22 @@ impl MovieApp {
                         }
                     }
                     DrawMode::Servers => {
-                        for i in 0..15 {
-                            ui.label(format!("server{}", i));
+                        if self.servers_fetch.start() {
+                            let client = self.client.clone();
+                            let sender = self.servers_fetch.sender();
+                            self.tokio.spawn( async move {
+                                let guilds = twilight_client::get_connected_guilds(&client).await;
+                                sender.send(guilds).expect("Receiver deallocated?");
+                            });
+                        }
+
+                        let received = self.servers_fetch.receive();
+                        if received.is_some() {
+                            self.servers = received.unwrap();
+                        }
+
+                        for server in &self.servers {
+                            ui.label(format!("{}", server.name));
                         }
                     }
                 }
@@ -162,6 +181,7 @@ impl MovieApp {
     }
 }
 
+#[derive(PartialEq)]
 enum DrawMode{
     Friends, Servers
 }

@@ -1,6 +1,3 @@
-use crate::config::Config;
-use crate::discord::twilight_client;
-
 mod discord;
 mod config;
 mod app;

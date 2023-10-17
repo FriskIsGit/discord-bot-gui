@@ -1,10 +1,10 @@
-use crate::app::MovieApp;
+use crate::app::DiscordApp;
 use crate::config::Config;
 
 use eframe::AppCreator;
 use egui::Vec2;
 
-impl eframe::App for MovieApp {
+impl eframe::App for DiscordApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.render(ctx);
     }
@@ -22,7 +22,7 @@ pub fn run_app() {
 
     let app_creator: AppCreator = Box::new(|cc| {
         egui_extras::install_image_loaders(&cc.egui_ctx);
-        let mut window = MovieApp::new(&cc.egui_ctx, config);
+        let mut window = DiscordApp::new(&cc.egui_ctx, config);
         window.setup();
         Box::new(window)
     });
