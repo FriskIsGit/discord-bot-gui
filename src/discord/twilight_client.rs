@@ -47,10 +47,13 @@ pub async fn get_members(client: &Client, guild: Server, limit: u16) -> Vec<Memb
 }
 
 pub async fn get_messages(client: &Client, channel_id: u64, limit: u16) -> Vec<Message>{
-    let response = client.channel_messages(Id::new(channel_id))
+    let result_response = client.channel_messages(Id::new(channel_id))
         .limit(limit).expect("Message limit failed to validate")
-        .await.unwrap();
-    let messages_body = response.text().await.expect("Failed to retrieve body as text");
+        .await;
+    if result_response.is_err() {
+        return Vec::new();
+    }
+    let messages_body = result_response.unwrap().text().await.expect("Failed to retrieve body as text");
     serde_json::from_str(messages_body.as_str()).expect("Failed to deserialize a message list")
 }
 pub async fn send_message(client: &Client, channel_id: u64, content: &str) -> Message {

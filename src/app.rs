@@ -4,7 +4,7 @@ use crate::config::Config;
 
 use egui;
 use egui::scroll_area::ScrollBarVisibility;
-use egui::{Align, Label, Layout, Sense, Vec2, Visuals};
+use egui::{Align, Label, Layout, Sense, TextBuffer, Vec2, Visuals};
 use twilight_http::Client;
 use tokio::runtime;
 use twilight_model::channel::{Channel, Message};
@@ -31,6 +31,8 @@ pub struct DiscordApp {
 
     messages_fetch: Fetch<Vec<Message>>,
     messages: Vec<Message>,
+
+    send_message_fetch: Fetch<Message>,
 
     client: Arc<Client>,
     config: Config,
@@ -68,6 +70,7 @@ impl DiscordApp {
             messages_fetch: Fetch::new(),
             messages: Vec::new(),
 
+            send_message_fetch: Fetch::new(),
             client: Arc::new(twilight_client::create_client(config.token.clone())),
             config,
         }
@@ -110,6 +113,7 @@ impl DiscordApp {
     }
 
     pub fn events(&mut self) {
+        //fetch servers
         if self.servers_fetch.start() {
             let client = self.client.clone();
             let sender = self.servers_fetch.sender();
@@ -126,11 +130,11 @@ impl DiscordApp {
 
         //fetch channels
         if self.selected_server_id.is_some() && self.channels_fetch.start() {
-            let channel_id = self.selected_server_id.unwrap();
+            let server_id = self.selected_server_id.unwrap();
             let client = self.client.clone();
             let sender = self.channels_fetch.sender();
             self.tokio.spawn( async move {
-                let channels = twilight_client::get_channels(&client, channel_id).await;
+                let channels = twilight_client::get_channels(&client, server_id).await;
                 let split_channels = twilight_client::split_into_text_and_voice(channels);
                 sender.send(split_channels).expect("Receiver deallocated?");
             });
@@ -153,6 +157,29 @@ impl DiscordApp {
         let received = self.messages_fetch.receive();
         if received.is_some() {
             self.messages = received.unwrap();
+            let channel_id = self.selected_channel_id.unwrap();
+            for channel in &self.channels.0 {
+                if channel.id == channel_id {
+                    self.current_channel = channel.name.clone().unwrap();
+                }
+            }
+        }
+
+        if !self.input_text.is_empty() && self.send_message_fetch.start() {
+            let channel_id = self.selected_channel_id.unwrap();
+            let content = self.input_text.clone();
+            let client = self.client.clone();
+            let sender = self.send_message_fetch.sender();
+            self.tokio.spawn( async move {
+                let message = twilight_client::send_message(&client, channel_id, content.as_str()).await;
+                sender.send(message).expect("Receiver deallocated?");
+            });
+        }
+        let received = self.send_message_fetch.receive();
+        if received.is_some() {
+            println!("Delivered message");
+            let msg = received.unwrap();
+            self.messages.insert(0, msg);
         }
     }
 }
@@ -224,14 +251,16 @@ impl DiscordApp {
             ui.with_layout(Layout::bottom_up(Align::Min), |ui| {
                 let input_field = egui::TextEdit::singleline(&mut self.input_text)
                     .min_size(Vec2::new(10.0, 10.0))
+                    .desired_rows(1)//this field should allow shift+enter
                     .hint_text("Message");
 
                 let response = ui.add(input_field);
-                let pressed_enter = ui.input(|i| i.key_pressed(egui::Key::Enter));
+                let pressed_enter = ui.input(|i|
+                    i.key_pressed(egui::Key::Enter)); // TODO: allow shift+enter
 
-                if response.lost_focus() && pressed_enter {
+                if !self.input_text.is_empty() && self.selected_channel_id.is_some() && response.lost_focus() && pressed_enter {
                     println!("Sending message: {}", self.input_text);
-                    self.input_text.clear();
+                    self.send_message_fetch.request();
                 }
 
                 egui::ScrollArea::vertical()
@@ -252,7 +281,7 @@ impl DiscordApp {
                             response.context_menu(|ui| {
                                 if ui.button("Copy text").clicked() {
                                     //ui.output().copied_text = text.clone();
-                                    ui.close_menu();
+                                    ui.close_menu(); //TODO: copy to clipboard(and make selectable?)
                                 }
                                 if ui.button("Reply").clicked() {
                                     ui.close_menu();
