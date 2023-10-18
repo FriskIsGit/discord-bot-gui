@@ -53,6 +53,13 @@ pub async fn get_messages(client: &Client, channel_id: u64, limit: u16) -> Vec<M
     let messages_body = response.text().await.expect("Failed to retrieve body as text");
     serde_json::from_str(messages_body.as_str()).expect("Failed to deserialize a message list")
 }
+pub async fn send_message(client: &Client, channel_id: u64, content: &str) -> Message {
+    let response = client.create_message(Id::new(channel_id))
+        .content(content).expect("Content didn't validate")
+        .await.unwrap();
+    let body = response.text().await.expect("Failed to retrieve body as text");
+    serde_json::from_str(body.as_str()).expect("Failed to deserialize a message list")
+}
 
 //consumes
 pub fn split_into_text_and_voice(mixed_channels: Vec<Channel>) -> (Vec<Channel>, Vec<Channel>) {

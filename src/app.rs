@@ -1,3 +1,4 @@
+use std::fmt::format;
 use std::sync::Arc;
 use crate::config::Config;
 
@@ -6,7 +7,8 @@ use egui::scroll_area::ScrollBarVisibility;
 use egui::{Align, Label, Layout, Sense, Vec2, Visuals};
 use twilight_http::Client;
 use tokio::runtime;
-use twilight_model::channel::Channel;
+use twilight_model::channel::{Channel, Message};
+use twilight_util::snowflake::Snowflake;
 use crate::discord::twilight_client;
 use crate::discord::fetch::Fetch;
 use crate::discord::guild::Server;
@@ -19,11 +21,16 @@ pub struct DiscordApp {
     draw_type: DrawMode,
 
     selected_server_id: Option<u64>,
+    selected_channel_id: Option<u64>,
+
     servers_fetch: Fetch<Vec<Server>>,
     servers: Vec<Server>,
 
     channels_fetch: Fetch<(Vec<Channel>, Vec<Channel>)>,
     channels: (Vec<Channel>, Vec<Channel>),
+
+    messages_fetch: Fetch<Vec<Message>>,
+    messages: Vec<Message>,
 
     client: Arc<Client>,
     config: Config,
@@ -48,12 +55,18 @@ impl DiscordApp {
             current_server: "Socialites".into(),
             current_channel: "#general".into(),
             draw_type: DrawMode::Servers,
+
+            selected_server_id: None,
+            selected_channel_id: None,
+
             servers_fetch: Fetch::new(),
             servers: Vec::new(),
 
             channels_fetch: Fetch::new(),
             channels: (Vec::new(), Vec::new()),
-            selected_server_id: None,
+
+            messages_fetch: Fetch::new(),
+            messages: Vec::new(),
 
             client: Arc::new(twilight_client::create_client(config.token.clone())),
             config,
@@ -122,10 +135,24 @@ impl DiscordApp {
                 sender.send(split_channels).expect("Receiver deallocated?");
             });
         }
-
         let received = self.channels_fetch.receive();
         if received.is_some() {
             self.channels = received.unwrap();
+        }
+
+        //fetch messages
+        if self.selected_channel_id.is_some() && self.messages_fetch.start() {
+            let channel_id = self.selected_channel_id.unwrap();
+            let client = self.client.clone();
+            let sender = self.messages_fetch.sender();
+            self.tokio.spawn( async move {
+                let messages = twilight_client::get_messages(&client, channel_id, 50).await;
+                sender.send(messages).expect("Receiver deallocated?");
+            });
+        }
+        let received = self.messages_fetch.receive();
+        if received.is_some() {
+            self.messages = received.unwrap();
         }
     }
 }
@@ -162,25 +189,32 @@ impl DiscordApp {
                         }
                     }
                 }
-
             });
         });
 
     }
-    pub fn left_inner_panel(&self, ctx:  &egui::Context){
+    pub fn left_inner_panel(&mut self, ctx:  &egui::Context){
         egui::SidePanel::left("channel_panel").show(ctx, |ui| {
             ui.heading(&self.current_server);
             ui.separator();
-            ui.vertical(|ui| {
-                for text in &self.channels.0 {
-                    let name = &text.name.to_owned().unwrap();
-                    let response = ui.add(Label::new(name).sense(Sense::click()));
-                }
-                for voice in &self.channels.1 {
-                    let name = &voice.name.to_owned().unwrap();
-                    let response = ui.add(Label::new(name).sense(Sense::click()));
-                }
-            });
+            egui::ScrollArea::vertical()
+                .scroll_bar_visibility(ScrollBarVisibility::VisibleWhenNeeded)
+                .auto_shrink([false, false])
+                .show(ui, |ui| { //show_rows
+                    for text in &self.channels.0 {
+                        let name = &text.name.to_owned().unwrap();
+                        let response = ui.add(Label::new(name).sense(Sense::click()));
+                        if response.clicked() {
+                            self.messages_fetch.request();
+                            self.selected_channel_id = Some(text.id.id());
+                        }
+                    }
+                    ui.separator();
+                    for voice in &self.channels.1 {
+                        let name = &voice.name.to_owned().unwrap();
+                        let response = ui.add(Label::new(name).sense(Sense::click()));
+                    }
+                });
         });
     }
     pub fn chat_panel(&mut self, ctx:  &egui::Context){
@@ -197,14 +231,34 @@ impl DiscordApp {
 
                 if response.lost_focus() && pressed_enter {
                     println!("Sending message: {}", self.input_text);
+                    self.input_text.clear();
                 }
 
                 egui::ScrollArea::vertical()
                     .scroll_bar_visibility(ScrollBarVisibility::VisibleWhenNeeded)
+                    .stick_to_bottom(true)
                     .auto_shrink([false, false])
                     .show(ui, |ui| { //show_rows
-                        for i in 0..100 {
-                            ui.label(format!("message{}", i));
+                        if self.messages.is_empty() {
+                            //ignore attachments for now
+                            return;
+                        }
+                        for msg in &self.messages {
+                            if msg.content.is_empty() {
+                                continue;
+                            }
+                            let text = format!("[{}] {}", msg.author.name, msg.content);
+                            let response = ui.add(Label::new(text).sense(Sense::click()));
+                            response.context_menu(|ui| {
+                                if ui.button("Copy text").clicked() {
+                                    //ui.output().copied_text = text.clone();
+                                    ui.close_menu();
+                                }
+                                if ui.button("Reply").clicked() {
+                                    ui.close_menu();
+                                }
+                            });
+                            ui.separator();
                         }
                     });
             });
