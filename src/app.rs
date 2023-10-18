@@ -1,13 +1,15 @@
-use std::fmt::format;
 use std::sync::Arc;
 use crate::config::Config;
 
 use egui;
 use egui::scroll_area::ScrollBarVisibility;
-use egui::{Align, Label, Layout, Sense, TextBuffer, Vec2, Visuals};
+use egui::{ Label, Sense, TextBuffer, Vec2, Visuals};
 use twilight_http::Client;
 use tokio::runtime;
+use twilight_gateway::Shard;
 use twilight_model::channel::{Channel, Message};
+use twilight_model::gateway::{Intents, ShardId};
+use twilight_model::gateway::event::EventType;
 use twilight_util::snowflake::Snowflake;
 use crate::discord::twilight_client;
 use crate::discord::fetch::Fetch;
@@ -33,7 +35,7 @@ pub struct DiscordApp {
     messages: Vec<Message>,
 
     send_message_fetch: Fetch<Message>,
-
+    event_loop_started: bool,
     client: Arc<Client>,
     config: Config,
 }
@@ -69,6 +71,7 @@ impl DiscordApp {
 
             messages_fetch: Fetch::new(),
             messages: Vec::new(),
+            event_loop_started: false,
 
             send_message_fetch: Fetch::new(),
             client: Arc::new(twilight_client::create_client(config.token.clone())),
@@ -112,7 +115,8 @@ impl DiscordApp {
 
     }
 
-    pub fn events(&mut self) {
+    pub fn ui_events(&mut self) {
+        self.discord_events(self.config.token.clone());
         //fetch servers
         if self.servers_fetch.start() {
             let client = self.client.clone();
@@ -138,6 +142,7 @@ impl DiscordApp {
                 let split_channels = twilight_client::split_into_text_and_voice(channels);
                 sender.send(split_channels).expect("Receiver deallocated?");
             });
+
         }
         let received = self.channels_fetch.receive();
         if received.is_some() {
@@ -181,6 +186,34 @@ impl DiscordApp {
             let msg = received.unwrap();
             self.messages.insert(0, msg);
         }
+    }
+    fn discord_events(&mut self, token: String) {
+        if self.event_loop_started {
+            return;
+        }
+        self.event_loop_started = true;
+        //let mut shard = Shard::new(ShardId::ONE, token, Intents::all());
+        // self.tokio.spawn(async move {
+        //     loop {
+        //         let event = match shard.next_event().await {
+        //             Ok(event) => event,
+        //             Err(source) => {
+        //                 if source.is_fatal() {
+        //                     println!("Encountered fatal error {:?}, exiting event loop", source.kind());
+        //                     break;
+        //                 }
+        //                 continue;
+        //             }
+        //         };
+        //         match event.kind() {
+        //             EventType::MessageCreate => {
+        //
+        //             }
+        //             _ => {}
+        //         }
+        //     }
+        // });
+        println!("Spawned event loop")
     }
 }
 
@@ -248,49 +281,50 @@ impl DiscordApp {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.heading(&self.current_channel);
             ui.separator();
-            ui.with_layout(Layout::bottom_up(Align::Min), |ui| {
-                let input_field = egui::TextEdit::singleline(&mut self.input_text)
-                    .min_size(Vec2::new(10.0, 10.0))
-                    .desired_rows(1)//this field should allow shift+enter
-                    .hint_text("Message");
 
-                let response = ui.add(input_field);
-                let pressed_enter = ui.input(|i|
-                    i.key_pressed(egui::Key::Enter)); // TODO: allow shift+enter
+            let input_field = egui::TextEdit::singleline(&mut self.input_text)
+                .min_size(Vec2::new(10.0, 10.0))
+                .desired_rows(1)//this field should allow shift+enter
+                .hint_text("Message");
+            ui.add_space(4.0);
+            let response = ui.add(input_field);
+            let pressed_enter = ui.input(|i|
+                i.key_pressed(egui::Key::Enter)); // TODO: allow shift+enter
 
-                if !self.input_text.is_empty() && self.selected_channel_id.is_some() && response.lost_focus() && pressed_enter {
-                    println!("Sending message: {}", self.input_text);
-                    self.send_message_fetch.request();
-                }
+            if !self.input_text.is_empty() && self.selected_channel_id.is_some() && response.lost_focus() && pressed_enter {
+                println!("Sending message: {}", self.input_text);
+                self.send_message_fetch.request();
+            }
 
-                egui::ScrollArea::vertical()
-                    .scroll_bar_visibility(ScrollBarVisibility::VisibleWhenNeeded)
-                    .stick_to_bottom(true)
-                    .auto_shrink([false, false])
-                    .show(ui, |ui| { //show_rows
-                        if self.messages.is_empty() {
-                            //ignore attachments for now
-                            return;
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, false])
+                .show(ui, |ui| { //show_rows
+                    if self.messages.is_empty() {
+                        //ignore attachments for now
+                        return;
+                    }
+                    for msg in &self.messages {
+                        if msg.content.is_empty() {
+                            continue;
                         }
-                        for msg in &self.messages {
-                            if msg.content.is_empty() {
-                                continue;
+                        let text = format!("[{}] {}", msg.author.name, msg.content);
+                        let response = ui.add(Label::new(text).sense(Sense::click()));
+                        response.context_menu(|ui| {
+                            if ui.button("Reply").clicked() {
+                                ui.close_menu();
                             }
-                            let text = format!("[{}] {}", msg.author.name, msg.content);
-                            let response = ui.add(Label::new(text).sense(Sense::click()));
-                            response.context_menu(|ui| {
-                                if ui.button("Copy text").clicked() {
-                                    //ui.output().copied_text = text.clone();
-                                    ui.close_menu(); //TODO: copy to clipboard(and make selectable?)
-                                }
-                                if ui.button("Reply").clicked() {
-                                    ui.close_menu();
-                                }
-                            });
-                            ui.separator();
-                        }
-                    });
-            });
+                            if ui.button("Copy text").clicked() {
+                                //ui.output().copied_text = text.clone();
+                                ui.close_menu(); //TODO: copy to clipboard(and make selectable?)
+                            }
+                            if ui.button("Delete message").clicked() {
+                                ui.close_menu();
+                            }
+                        });
+                        ui.separator();
+                    }
+                });
+
         });
     }
     pub fn member_panel(&self, ctx:  &egui::Context){

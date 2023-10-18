@@ -7,7 +7,7 @@ use egui::Vec2;
 impl eframe::App for DiscordApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.render(ctx);
-        self.events();
+        self.ui_events();
     }
 }
 
