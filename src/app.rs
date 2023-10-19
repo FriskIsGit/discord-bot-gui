@@ -280,24 +280,24 @@ impl DiscordApp {
         });
     }
     pub fn chat_panel(&mut self, ctx:  &egui::Context){
+        egui::TopBottomPanel::bottom("message_panel").show(ctx, |ui|{
+            let input_field = egui::TextEdit::multiline(&mut self.input_text)
+                .min_size(Vec2::new(30.0, 30.0))
+                .desired_rows(2)//this field should allow shift+enter
+                .hint_text("Message");
+            let response = ui.add(input_field);
+            let submitted = ui.input(|i| {
+                i.key_pressed(egui::Key::Enter) && !i.modifiers.shift
+            });
+            if !self.input_text.is_empty() && self.selected_channel_id.is_some() && submitted {
+                response.surrender_focus();
+                println!("Sending message: {}", self.input_text);
+                self.send_message_fetch.request();
+            }
+        });
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.heading(&self.current_channel);
             ui.separator();
-
-            egui::TopBottomPanel::bottom("message_panel").show(ctx, |ui|{
-                let input_field = egui::TextEdit::singleline(&mut self.input_text)
-                    .min_size(Vec2::new(10.0, 10.0))
-                    .desired_rows(1)//this field should allow shift+enter
-                    .hint_text("Message");
-                let response = ui.add(input_field);
-                let pressed_enter = ui.input(|i|
-                    i.key_pressed(egui::Key::Enter)); // TODO: allow shift+enter
-
-                if !self.input_text.is_empty() && self.selected_channel_id.is_some() && response.lost_focus() && pressed_enter {
-                    println!("Sending message: {}", self.input_text);
-                    self.send_message_fetch.request();
-                }
-            });
 
             let scroll = egui::ScrollArea::vertical().auto_shrink([false, false]).stick_to_bottom(true);
             scroll.show(ui, |ui| { //show_rows
