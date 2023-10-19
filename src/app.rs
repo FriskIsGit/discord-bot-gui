@@ -1,10 +1,12 @@
 use std::alloc::Layout;
+use std::future::Future;
 use std::sync::Arc;
 use crate::config::Config;
 
 use egui;
 use egui::scroll_area::ScrollBarVisibility;
 use egui::{ Label, Sense, TextBuffer, Vec2, Visuals};
+use rfd::{AsyncFileDialog};
 use twilight_http::Client;
 use tokio::runtime;
 use twilight_gateway::Shard;
@@ -37,6 +39,10 @@ pub struct DiscordApp {
 
     send_message_fetch: Fetch<Message>,
     event_loop_started: bool,
+
+    file_fetch: Fetch<Vec<u8>>,
+    file_bytes: Vec<u8>,
+
     client: Arc<Client>,
     config: Config,
 }
@@ -73,6 +79,9 @@ impl DiscordApp {
             messages_fetch: Fetch::new(),
             messages: Vec::new(),
             event_loop_started: false,
+
+            file_fetch: Fetch::new(),
+            file_bytes: Vec::new(),
 
             send_message_fetch: Fetch::new(),
             client: Arc::new(twilight_client::create_client(config.token.clone())),
@@ -188,6 +197,28 @@ impl DiscordApp {
             let msg = received.unwrap();
             self.messages.insert(0, msg);
         }
+
+        //file fetch
+        if self.file_fetch.start() {
+            let sender = self.file_fetch.sender();
+            self.tokio.spawn( async move {
+                let file = AsyncFileDialog::new()
+                    .pick_file()
+                    .await;
+                if file.is_none() {
+                    sender.send(Vec::new()).expect("Receiver deallocated?");
+                    return
+                }
+                let bytes = file.unwrap().read().await;
+                sender.send(bytes).expect("Receiver deallocated?");
+            });
+        }
+        let received = self.file_fetch.receive();
+        if received.is_some() {
+            self.file_bytes = received.unwrap();
+            println!("Received bytes {}", self.file_bytes.len());
+        }
+
     }
     fn discord_events(&mut self, token: String) {
         if self.event_loop_started {
@@ -281,19 +312,25 @@ impl DiscordApp {
     }
     pub fn chat_panel(&mut self, ctx:  &egui::Context){
         egui::TopBottomPanel::bottom("message_panel").show(ctx, |ui|{
-            let input_field = egui::TextEdit::multiline(&mut self.input_text)
-                .min_size(Vec2::new(30.0, 30.0))
-                .desired_rows(2)//this field should allow shift+enter
-                .hint_text("Message");
-            let response = ui.add(input_field);
-            let submitted = ui.input(|i| {
-                i.key_pressed(egui::Key::Enter) && !i.modifiers.shift
+            ui.horizontal(|ui| {
+                let input_field = egui::TextEdit::multiline(&mut self.input_text)
+                    .min_size(Vec2::new(30.0, 30.0))
+                    .desired_rows(1)//this field should allow shift+enter
+                    .hint_text("Message");
+                let response = ui.add(input_field);
+                let submitted = ui.input(|i| {
+                    i.key_pressed(egui::Key::Enter) && !i.modifiers.shift
+                });
+                if !self.input_text.is_empty() && self.selected_channel_id.is_some() && submitted {
+                    response.surrender_focus();
+                    println!("Sending message: {}", self.input_text);
+                    self.send_message_fetch.request();
+                }
+                if ui.button("Add file").clicked() {
+                    self.file_fetch.request();
+                }
             });
-            if !self.input_text.is_empty() && self.selected_channel_id.is_some() && submitted {
-                response.surrender_focus();
-                println!("Sending message: {}", self.input_text);
-                self.send_message_fetch.request();
-            }
+
         });
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.heading(&self.current_channel);
@@ -306,17 +343,24 @@ impl DiscordApp {
                     return;
                 }
                 for msg in self.messages.iter().rev() {
+                    let text: String;
                     if msg.content.is_empty() {
-                        continue;
+                        if msg.attachments.is_empty() {
+                            continue;
+                        }
+                        text = msg.attachments[0].url.clone();
+                    } else {
+                        text = format!("[{}] {}", msg.author.name, msg.content);
                     }
-                    let text = format!("[{}] {}", msg.author.name, msg.content);
-                    let response = ui.add(Label::new(text).sense(Sense::click()));
+
+                    let response = ui.add(Label::new(&text).sense(Sense::click()));
                     response.context_menu(|ui| {
                         if ui.button("Reply").clicked() {
                             ui.close_menu();
                         }
                         if ui.button("Copy text").clicked() {
                             //ui.output().copied_text = text.clone();
+                            println!("{}", text);
                             ui.close_menu(); //TODO: copy to clipboard(and make selectable?)
                         }
                         if ui.button("Delete message").clicked() {
