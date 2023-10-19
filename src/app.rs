@@ -1,3 +1,4 @@
+use std::alloc::Layout;
 use std::sync::Arc;
 use crate::config::Config;
 
@@ -56,8 +57,8 @@ impl DiscordApp {
         Self {
             tokio: tokio_runtime,
             input_text: "".into(),
-            current_server: "Socialites".into(),
-            current_channel: "#general".into(),
+            current_server: "".into(),
+            current_channel: "".into(),
             draw_type: DrawMode::Servers,
 
             selected_server_id: None,
@@ -182,6 +183,7 @@ impl DiscordApp {
         }
         let received = self.send_message_fetch.receive();
         if received.is_some() {
+            self.input_text.clear();
             println!("Delivered message");
             let msg = received.unwrap();
             self.messages.insert(0, msg);
@@ -282,48 +284,48 @@ impl DiscordApp {
             ui.heading(&self.current_channel);
             ui.separator();
 
-            let input_field = egui::TextEdit::singleline(&mut self.input_text)
-                .min_size(Vec2::new(10.0, 10.0))
-                .desired_rows(1)//this field should allow shift+enter
-                .hint_text("Message");
-            ui.add_space(4.0);
-            let response = ui.add(input_field);
-            let pressed_enter = ui.input(|i|
-                i.key_pressed(egui::Key::Enter)); // TODO: allow shift+enter
+            egui::TopBottomPanel::bottom("message_panel").show(ctx, |ui|{
+                let input_field = egui::TextEdit::singleline(&mut self.input_text)
+                    .min_size(Vec2::new(10.0, 10.0))
+                    .desired_rows(1)//this field should allow shift+enter
+                    .hint_text("Message");
+                let response = ui.add(input_field);
+                let pressed_enter = ui.input(|i|
+                    i.key_pressed(egui::Key::Enter)); // TODO: allow shift+enter
 
-            if !self.input_text.is_empty() && self.selected_channel_id.is_some() && response.lost_focus() && pressed_enter {
-                println!("Sending message: {}", self.input_text);
-                self.send_message_fetch.request();
-            }
+                if !self.input_text.is_empty() && self.selected_channel_id.is_some() && response.lost_focus() && pressed_enter {
+                    println!("Sending message: {}", self.input_text);
+                    self.send_message_fetch.request();
+                }
+            });
 
-            egui::ScrollArea::vertical()
-                .auto_shrink([false, false])
-                .show(ui, |ui| { //show_rows
-                    if self.messages.is_empty() {
-                        //ignore attachments for now
-                        return;
+            let scroll = egui::ScrollArea::vertical().auto_shrink([false, false]).stick_to_bottom(true);
+            scroll.show(ui, |ui| { //show_rows
+                if self.messages.is_empty() {
+                    //ignore attachments for now
+                    return;
+                }
+                for msg in self.messages.iter().rev() {
+                    if msg.content.is_empty() {
+                        continue;
                     }
-                    for msg in &self.messages {
-                        if msg.content.is_empty() {
-                            continue;
+                    let text = format!("[{}] {}", msg.author.name, msg.content);
+                    let response = ui.add(Label::new(text).sense(Sense::click()));
+                    response.context_menu(|ui| {
+                        if ui.button("Reply").clicked() {
+                            ui.close_menu();
                         }
-                        let text = format!("[{}] {}", msg.author.name, msg.content);
-                        let response = ui.add(Label::new(text).sense(Sense::click()));
-                        response.context_menu(|ui| {
-                            if ui.button("Reply").clicked() {
-                                ui.close_menu();
-                            }
-                            if ui.button("Copy text").clicked() {
-                                //ui.output().copied_text = text.clone();
-                                ui.close_menu(); //TODO: copy to clipboard(and make selectable?)
-                            }
-                            if ui.button("Delete message").clicked() {
-                                ui.close_menu();
-                            }
-                        });
-                        ui.separator();
-                    }
-                });
+                        if ui.button("Copy text").clicked() {
+                            //ui.output().copied_text = text.clone();
+                            ui.close_menu(); //TODO: copy to clipboard(and make selectable?)
+                        }
+                        if ui.button("Delete message").clicked() {
+                            ui.close_menu();
+                        }
+                    });
+                    ui.separator();
+                }
+            });
 
         });
     }
