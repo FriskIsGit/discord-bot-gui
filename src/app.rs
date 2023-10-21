@@ -1,12 +1,15 @@
 use std::alloc::Layout;
+use std::fs::File;
 use std::future::Future;
+use std::io::Read;
+use std::io::BufReader;
 use std::sync::Arc;
 use crate::config::Config;
 
 use egui;
 use egui::scroll_area::ScrollBarVisibility;
 use egui::{ Label, Sense, TextBuffer, Vec2, Visuals};
-use rfd::{AsyncFileDialog};
+use native_dialog::FileDialog;
 use twilight_http::Client;
 use tokio::runtime;
 use twilight_gateway::Shard;
@@ -202,14 +205,19 @@ impl DiscordApp {
         if self.file_fetch.start() {
             let sender = self.file_fetch.sender();
             self.tokio.spawn( async move {
-                let file = AsyncFileDialog::new()
-                    .pick_file()
-                    .await;
-                if file.is_none() {
-                    sender.send(Vec::new()).expect("Receiver deallocated?");
-                    return
-                }
-                let bytes = file.unwrap().read().await;
+                let path = FileDialog::new()
+                    .set_location("~/Desktop")
+                    .show_open_single_file()
+                    .unwrap();
+
+                let path = match path {
+                    Some(path) => path,
+                    None => return,
+                };
+                let file = File::open(path).unwrap();
+                let mut reader = BufReader::new(file);
+                let mut bytes = Vec::new();
+                reader.read_to_end(&mut bytes).expect("Couldn't read all bytes?");
                 sender.send(bytes).expect("Receiver deallocated?");
             });
         }
