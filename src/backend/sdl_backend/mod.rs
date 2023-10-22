@@ -1,5 +1,8 @@
 #![warn(clippy::all)]
 #![allow(clippy::single_match)]
+
+use std::sync::Arc;
+use std::thread;
 // Re-export dependencies.
 pub use egui;
 pub use gl;
@@ -34,6 +37,9 @@ impl Default for Signal {
 }
 #[cfg(feature = "use_epi")]
 use epi::backend::RepaintSignal;
+use crate::discord::event_thread::EventController;
+use crate::discord::shared_cache::{ArcMutex, Queue, SharedCache};
+
 #[cfg(feature = "use_epi")]
 impl RepaintSignal for Signal {
     fn request_repaint(&self) {}
@@ -453,10 +459,19 @@ pub fn run_app() {
 
     let start_time = Instant::now();
 
+    let config = Config::read_config("res/config.json");
+    let shared_cache = Arc::new(SharedCache::new()); // shared in two places
+    let job_queue = ArcMutex::new(Queue::new()); // shared in two places
+    let mut event_controller = EventController::new(
+        shared_cache.clone(),
+        job_queue.clone(),
+        config.token.clone());
+    thread::spawn(move || {
+        event_controller.idle();
+    });
     println!("Running!");
     egui_extras::install_image_loaders(&egui_context);
-    let config = Config::read_config("res/config.json");
-    let mut discord_app = DiscordApp::new(&egui_context, config);
+    let mut discord_app = DiscordApp::new(&egui_context, shared_cache, job_queue, config);
     discord_app.setup();
 
     'running: loop {

@@ -7,15 +7,9 @@ use crate::config::Config;
 use egui;
 use egui::scroll_area::ScrollBarVisibility;
 use egui::{Label, Sense, TextBuffer, Vec2, Visuals};
-use native_dialog::FileDialog;
-use twilight_model::channel::{Channel, Message};
-use twilight_util::snowflake::Snowflake;
-use crate::discord::twilight_client;
-use crate::discord::fetch::Fetch;
-use crate::discord::guild::Server;
 use crate::discord::jobs::{GetMessages, Job, SendMessage};
 use crate::discord::jobs::GetChannels;
-use crate::discord::jobs::GetMembers;
+
 use crate::discord::shared_cache::{ArcMutex, Queue, SharedCache};
 
 pub struct DiscordApp {
