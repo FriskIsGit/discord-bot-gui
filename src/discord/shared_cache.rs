@@ -1,5 +1,6 @@
 use std::sync::{Arc, Mutex, MutexGuard};
 use twilight_model::channel::{Channel, Message};
+use twilight_model::guild::Member;
 use crate::discord::guild::Server;
 use crate::discord::jobs::Job;
 
@@ -8,6 +9,7 @@ pub struct SharedCache {
     pub channels: ArcMutex<(Vec<Channel>, Vec<Channel>)>, // should be cached per server
 
     pub messages: ArcMutex<Vec<Message>>, // should be cached per channel
+    pub members: ArcMutex<Vec<Member>>, // should be cached per server
     pub file_bytes: ArcMutex<Vec<u8>>,
     // config: Config,
     // Temporary?
@@ -19,6 +21,7 @@ impl SharedCache {
             servers: ArcMutex::new(vec![]),
             channels: ArcMutex::new((vec![], vec![])),
             messages: ArcMutex::new(vec![]),
+            members: ArcMutex::new(vec![]),
             file_bytes: ArcMutex::new(vec![]),
             msg_sent: ArcMutex::new(None),
         }

@@ -9,6 +9,7 @@ pub enum Job {
     SendMessage(SendMessage),
     DeleteMessage(DeleteMessage),
     SendFile(SendFile),
+    CreateChannel(CreateChannel),
 }
 impl Job{
 
@@ -83,5 +84,15 @@ pub struct SendFile {
 impl SendFile {
     pub fn new(channel_id: u64, filename: String, bytes: Vec<u8>) -> Self {
         Self{ channel_id, filename, bytes }
+    }
+}
+
+pub struct CreateChannel {
+    pub server_id: u64,
+    pub name: String,
+}
+impl CreateChannel {
+    pub fn new(server_id: u64, name: String) -> Self {
+        Self{ server_id, name }
     }
 }

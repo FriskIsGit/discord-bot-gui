@@ -7,7 +7,8 @@ use crate::config::Config;
 use egui;
 use egui::scroll_area::ScrollBarVisibility;
 use egui::{Label, Sense, TextBuffer, Vec2, Visuals};
-use crate::discord::jobs::{DeleteMessage, GetMessages, Job, SendMessage};
+use twilight_model::guild::Member;
+use crate::discord::jobs::{DeleteMessage, GetMembers, GetMessages, Job, SendMessage};
 use crate::discord::jobs::GetChannels;
 
 use crate::discord::shared_cache::{ArcMutex, Queue, SharedCache};
@@ -227,7 +228,23 @@ impl DiscordApp {
     }
     pub fn member_panel(&self, ctx: &egui::Context) {
         egui::SidePanel::right("member_panel").show(ctx, |ui| {
-            ui.vertical(|ui| {});
+            if ui.button("Fetch members").clicked() && self.selected_server_id != 0 {
+                let job = Job::GetMembers(GetMembers::new(self.selected_server_id, 200));
+                self.append_job(job);
+            }
+            egui::ScrollArea::vertical()
+                .scroll_bar_visibility(ScrollBarVisibility::VisibleWhenNeeded)
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    let members = self.shared_cache.members.guard();
+                    for member in &*members {
+                        let response = ui.add(Label::new(&member.user.name).sense(Sense::click()));
+                        if response.clicked() {
+
+                        }
+                    }
+                    ui.separator();
+                });
         });
     }
 }

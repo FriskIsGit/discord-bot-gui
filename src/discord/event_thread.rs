@@ -7,7 +7,7 @@ use std::io::Read;
 use std::io::BufReader;
 use std::thread;
 use native_dialog::FileDialog;
-use crate::discord::jobs::{DeleteMessage, GetChannels, GetMessages, Job, SendMessage};
+use crate::discord::jobs::{DeleteMessage, GetChannels, GetMembers, GetMessages, Job, SendMessage};
 use crate::discord::shared_cache::{ArcMutex, Queue, SharedCache};
 use crate::discord::twilight_client;
 
@@ -44,7 +44,6 @@ impl EventController{
             ticker.tick();
             self.receive_events();
             self.do_jobs();
-            println!("T:{}", ticker.ticked)
         }
     }
 
@@ -68,7 +67,7 @@ impl EventController{
 
             }
             Job::GetMembers(member_fetch) => {
-
+                self.get_members(member_fetch)
             }
             Job::SendMessage(msg_send) => {
                 self.send_message(msg_send)
@@ -80,6 +79,7 @@ impl EventController{
                 self.select_file()
             }
             Job::SendFile(file_send) => {}
+            Job::CreateChannel(channel_create) => {}
         }
     }
     fn get_servers(&mut self) {
@@ -105,6 +105,14 @@ impl EventController{
         self.tokio.spawn(async move {
             let messages = twilight_client::get_messages(&client, msg_fetch.channel_id, msg_fetch.limit).await;
             *cache.messages.guard() = messages;
+        });
+    }
+    fn get_members(&self, member_fetch: GetMembers) {
+        let client = self.client.clone();
+        let cache = self.shared_data.clone();
+        self.tokio.spawn(async move {
+            let members = twilight_client::get_members(&client, member_fetch.server_id, member_fetch.limit).await;
+            *cache.members.guard() = members;
         });
     }
     fn send_message(&self, msg_send: SendMessage) {

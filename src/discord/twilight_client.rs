@@ -40,8 +40,8 @@ pub async fn get_channels(client: &Client, server_id: u64) -> Vec<Channel> {
     serde_json::from_str(channels_body.as_str()).expect(INSTANCE_ERR)
 }
 
-pub async fn get_members(client: &Client, guild: Server, limit: u16) -> Vec<Member> {
-    let response = client.guild_members(guild.id_marker())
+pub async fn get_members(client: &Client, guild_id: u64, limit: u16) -> Vec<Member> {
+    let response = client.guild_members(Id::new(guild_id))
         .limit(limit).expect(LIMIT_ERR)
         .await.unwrap();
     let members_body = response.text().await.expect(RESPONSE_BODY_ERR);
@@ -57,6 +57,15 @@ pub async fn get_messages(client: &Client, channel_id: u64, limit: u16) -> Vec<M
     }
     let messages_body = result_response.unwrap().text().await.expect(RESPONSE_BODY_ERR);
     serde_json::from_str(messages_body.as_str()).expect(INSTANCE_ERR)
+}
+pub async fn create_channel(client: &Client, guild_id: u64, name: String) -> Option<Channel> {
+    let result_response = client.create_guild_channel(Id::new(guild_id), name.as_str())
+        .expect(VALIDATION_ERR).await;
+    if result_response.is_err() {
+        return None;
+    }
+    let messages_body = result_response.unwrap().text().await.expect(RESPONSE_BODY_ERR);
+    Some(serde_json::from_str(messages_body.as_str()).expect(INSTANCE_ERR))
 }
 pub async fn send_message(client: &Client, channel_id: u64, content: &str) -> Message {
     let response = client.create_message(Id::new(channel_id))
