@@ -1,4 +1,5 @@
 use twilight_http::Client;
+use twilight_http::request::AuditLogReason;
 use twilight_model::channel::{Channel, ChannelType, Message};
 use twilight_model::guild::Member;
 use twilight_model::http::attachment::Attachment;
@@ -63,6 +64,11 @@ pub async fn send_message(client: &Client, channel_id: u64, content: &str) -> Me
         .await.unwrap();
     let body = response.text().await.expect(RESPONSE_BODY_ERR);
     serde_json::from_str(body.as_str()).expect(INSTANCE_ERR)
+}
+pub async fn delete_message(client: &Client, channel_id: u64, message_id: u64) -> bool {
+    let response = client.delete_message(Id::new(channel_id), Id::new(message_id))
+        .await.unwrap();
+    response.status().is_success()
 }
 pub async fn send_file(client: &Client, channel_id: u64, filename: String, bytes: Vec<u8>) -> Message {
     let attachment = &[Attachment::from_bytes(filename, bytes, 1)];

@@ -7,7 +7,7 @@ use crate::config::Config;
 use egui;
 use egui::scroll_area::ScrollBarVisibility;
 use egui::{Label, Sense, TextBuffer, Vec2, Visuals};
-use crate::discord::jobs::{GetMessages, Job, SendMessage};
+use crate::discord::jobs::{DeleteMessage, GetMessages, Job, SendMessage};
 use crate::discord::jobs::GetChannels;
 
 use crate::discord::shared_cache::{ArcMutex, Queue, SharedCache};
@@ -123,6 +123,11 @@ impl DiscordApp {
                     }
                 }
             });
+            // Options should be placed in the left bottom corner of this panel
+            ui.separator();
+            if ui.button("Options").clicked() {
+                println!("options clicked");
+            }
         });
     }
     pub fn left_inner_panel(&mut self, ctx: &egui::Context) {
@@ -166,8 +171,10 @@ impl DiscordApp {
                 });
                 if !self.input_text.is_empty() && self.selected_channel_id != 0 && submitted {
                     response.surrender_focus();
+                    response.request_focus();
                     let job = Job::SendMessage(SendMessage::new(self.selected_channel_id, self.input_text.clone()));
                     self.append_job(job);
+                    self.input_text.truncate(0);
                 }
                 if ui.button("Add file").clicked() {
                     let job = Job::SelectFile;
@@ -208,6 +215,8 @@ impl DiscordApp {
                             ui.close_menu(); //TODO: copy to clipboard(and make selectable?)
                         }
                         if ui.button("Delete message").clicked() {
+                            let job = Job::DeleteMessage(DeleteMessage::new(msg.channel_id.get(), msg.id.get()));
+                            self.append_job(job);
                             ui.close_menu();
                         }
                     });

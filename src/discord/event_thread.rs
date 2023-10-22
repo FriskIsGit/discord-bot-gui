@@ -7,7 +7,7 @@ use std::io::Read;
 use std::io::BufReader;
 use std::thread;
 use native_dialog::FileDialog;
-use crate::discord::jobs::{GetChannels, GetMessages, Job, SendMessage};
+use crate::discord::jobs::{DeleteMessage, GetChannels, GetMessages, Job, SendMessage};
 use crate::discord::shared_cache::{ArcMutex, Queue, SharedCache};
 use crate::discord::twilight_client;
 
@@ -73,6 +73,9 @@ impl EventController{
             Job::SendMessage(msg_send) => {
                 self.send_message(msg_send)
             }
+            Job::DeleteMessage(msg_delete) => {
+                self.delete_message(msg_delete)
+            }
             Job::SelectFile => {
                 self.select_file()
             }
@@ -111,6 +114,29 @@ impl EventController{
             let message = twilight_client::send_message(&client, msg_send.channel_id, msg_send.content.as_str()).await;
             *cache.msg_sent.guard() = Some(message.clone());
             (*cache.messages.guard()).insert(0, message);
+        });
+    }
+    fn delete_message(&self, msg_delete: DeleteMessage) {
+        let client = self.client.clone();
+        let cache = self.shared_data.clone();
+        self.tokio.spawn(async move {
+            let success = twilight_client::delete_message(&client, msg_delete.channel_id, msg_delete.message_id).await;
+            if !success {
+                return;
+            }
+            let mut messages = cache.messages.guard();
+            let mut index = 0;
+            let mut found = false;
+            for (i, msg) in messages.iter().enumerate() {
+                if msg.id == msg_delete.message_id {
+                    index = i;
+                    found = true;
+                    break;
+                }
+            }
+            if found {
+                messages.remove(index);
+            }
         });
     }
     fn select_file(&self) {
