@@ -1,10 +1,11 @@
+use std::thread;
+
 mod discord;
 mod config;
 mod app;
 mod backend;
 
 fn main() {
-    // let config = Config::read_config("res/config.json");
     println!("Finished");
 
     #[cfg(feature = "sdl_backend")]

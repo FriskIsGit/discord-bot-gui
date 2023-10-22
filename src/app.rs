@@ -1,6 +1,4 @@
-use std::alloc::Layout;
 use std::fs::File;
-use std::future::Future;
 use std::io::Read;
 use std::io::BufReader;
 use std::sync::Arc;
@@ -8,92 +6,55 @@ use crate::config::Config;
 
 use egui;
 use egui::scroll_area::ScrollBarVisibility;
-use egui::{ Label, Sense, TextBuffer, Vec2, Visuals};
+use egui::{Label, Sense, TextBuffer, Vec2, Visuals};
 use native_dialog::FileDialog;
-use twilight_http::Client;
-use tokio::runtime;
-use twilight_gateway::Shard;
 use twilight_model::channel::{Channel, Message};
-use twilight_model::gateway::{Intents, ShardId};
-use twilight_model::gateway::event::EventType;
 use twilight_util::snowflake::Snowflake;
 use crate::discord::twilight_client;
 use crate::discord::fetch::Fetch;
 use crate::discord::guild::Server;
+use crate::discord::jobs::{GetMessages, Job, SendMessage};
+use crate::discord::jobs::GetChannels;
+use crate::discord::jobs::GetMembers;
+use crate::discord::shared_cache::{ArcMutex, Queue, SharedCache};
 
 pub struct DiscordApp {
-    tokio: runtime::Runtime, 
+    shared_cache: Arc<SharedCache>,
+    job_queue: ArcMutex<Queue<Job>>,
+    config: Config,
+
     input_text: String,
     current_server: String,
     current_channel: String,
     draw_type: DrawMode,
 
-    selected_server_id: Option<u64>,
-    selected_channel_id: Option<u64>,
-
-    servers_fetch: Fetch<Vec<Server>>,
-    servers: Vec<Server>,
-
-    channels_fetch: Fetch<(Vec<Channel>, Vec<Channel>)>,
-    channels: (Vec<Channel>, Vec<Channel>),
-
-    messages_fetch: Fetch<Vec<Message>>,
-    messages: Vec<Message>,
-
-    send_message_fetch: Fetch<Message>,
-    event_loop_started: bool,
-
-    file_fetch: Fetch<Vec<u8>>,
-    file_bytes: Vec<u8>,
-
-    client: Arc<Client>,
-    config: Config,
+    selected_server_id: u64,
+    selected_channel_id: u64,
 }
 
 impl DiscordApp {
-    pub fn new(ctx: &egui::Context, config: Config) -> Self {
+    pub fn new(ctx: &egui::Context, shared_cache: Arc<SharedCache>, job_queue: ArcMutex<Queue<Job>>, config: Config) -> Self {
         let visuals = Visuals::dark();
         ctx.set_visuals(visuals);
 
         // Implement dynamic scale changing?
         ctx.set_pixels_per_point(1.66);
 
-        let tokio_runtime = runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            .unwrap();
-
         Self {
-            tokio: tokio_runtime,
+            shared_cache,
+            job_queue,
+            config,
             input_text: "".into(),
             current_server: "".into(),
             current_channel: "".into(),
             draw_type: DrawMode::Servers,
 
-            selected_server_id: None,
-            selected_channel_id: None,
-
-            servers_fetch: Fetch::new(),
-            servers: Vec::new(),
-
-            channels_fetch: Fetch::new(),
-            channels: (Vec::new(), Vec::new()),
-
-            messages_fetch: Fetch::new(),
-            messages: Vec::new(),
-            event_loop_started: false,
-
-            file_fetch: Fetch::new(),
-            file_bytes: Vec::new(),
-
-            send_message_fetch: Fetch::new(),
-            client: Arc::new(twilight_client::create_client(config.token.clone())),
-            config,
+            selected_server_id: 0,
+            selected_channel_id: 0,
         }
     }
 
     pub fn setup(&mut self) {
-
         // Start with the default fonts (we will be adding to them rather than replacing them).
         let mut fonts = egui::FontDefinitions::default();
 
@@ -125,141 +86,16 @@ impl DiscordApp {
         self.left_inner_panel(ctx);
         self.member_panel(ctx); //right most
         self.chat_panel(ctx); //middle
-
     }
 
-    pub fn ui_events(&mut self) {
-        self.discord_events(self.config.token.clone());
-        //fetch servers
-        if self.servers_fetch.start() {
-            let client = self.client.clone();
-            let sender = self.servers_fetch.sender();
-            self.tokio.spawn( async move {
-                let guilds = twilight_client::get_connected_servers(&client).await;
-                sender.send(guilds).expect("Receiver deallocated?");
-            });
-        }
-
-        let received = self.servers_fetch.receive();
-        if received.is_some() {
-            self.servers = received.unwrap();
-        }
-
-        //fetch channels
-        if self.selected_server_id.is_some() && self.channels_fetch.start() {
-            let server_id = self.selected_server_id.unwrap();
-            let client = self.client.clone();
-            let sender = self.channels_fetch.sender();
-            self.tokio.spawn( async move {
-                let channels = twilight_client::get_channels(&client, server_id).await;
-                let split_channels = twilight_client::split_into_text_and_voice(channels);
-                sender.send(split_channels).expect("Receiver deallocated?");
-            });
-
-        }
-        let received = self.channels_fetch.receive();
-        if received.is_some() {
-            self.channels = received.unwrap();
-        }
-
-        //fetch messages
-        if self.selected_channel_id.is_some() && self.messages_fetch.start() {
-            let channel_id = self.selected_channel_id.unwrap();
-            let client = self.client.clone();
-            let sender = self.messages_fetch.sender();
-            self.tokio.spawn( async move {
-                let messages = twilight_client::get_messages(&client, channel_id, 50).await;
-                sender.send(messages).expect("Receiver deallocated?");
-            });
-        }
-        let received = self.messages_fetch.receive();
-        if received.is_some() {
-            self.messages = received.unwrap();
-            let channel_id = self.selected_channel_id.unwrap();
-            for channel in &self.channels.0 {
-                if channel.id == channel_id {
-                    self.current_channel = channel.name.clone().unwrap();
-                }
-            }
-        }
-
-        if !self.input_text.is_empty() && self.send_message_fetch.start() {
-            let channel_id = self.selected_channel_id.unwrap();
-            let content = self.input_text.clone();
-            let client = self.client.clone();
-            let sender = self.send_message_fetch.sender();
-            self.tokio.spawn( async move {
-                let message = twilight_client::send_message(&client, channel_id, content.as_str()).await;
-                sender.send(message).expect("Receiver deallocated?");
-            });
-        }
-        let received = self.send_message_fetch.receive();
-        if received.is_some() {
-            self.input_text.clear();
-            println!("Delivered message");
-            let msg = received.unwrap();
-            self.messages.insert(0, msg);
-        }
-
-        //file fetch
-        if self.file_fetch.start() {
-            let sender = self.file_fetch.sender();
-            self.tokio.spawn( async move {
-                let path = FileDialog::new()
-                    .set_location("~/Desktop")
-                    .show_open_single_file()
-                    .unwrap();
-
-                let path = match path {
-                    Some(path) => path,
-                    None => return,
-                };
-                let file = File::open(path).unwrap();
-                let mut reader = BufReader::new(file);
-                let mut bytes = Vec::new();
-                reader.read_to_end(&mut bytes).expect("Couldn't read all bytes?");
-                sender.send(bytes).expect("Receiver deallocated?");
-            });
-        }
-        let received = self.file_fetch.receive();
-        if received.is_some() {
-            self.file_bytes = received.unwrap();
-            println!("Received bytes {}", self.file_bytes.len());
-        }
-
-    }
-    fn discord_events(&mut self, token: String) {
-        if self.event_loop_started {
-            return;
-        }
-        self.event_loop_started = true;
-        //let mut shard = Shard::new(ShardId::ONE, token, Intents::all());
-        // self.tokio.spawn(async move {
-        //     loop {
-        //         let event = match shard.next_event().await {
-        //             Ok(event) => event,
-        //             Err(source) => {
-        //                 if source.is_fatal() {
-        //                     println!("Encountered fatal error {:?}, exiting event loop", source.kind());
-        //                     break;
-        //                 }
-        //                 continue;
-        //             }
-        //         };
-        //         match event.kind() {
-        //             EventType::MessageCreate => {
-        //
-        //             }
-        //             _ => {}
-        //         }
-        //     }
-        // });
-        println!("Spawned event loop")
+    pub fn append_job(&self, job: Job) {
+        let mut queue_guard = self.job_queue.guard();
+        (*queue_guard).push(job);
     }
 }
 
 impl DiscordApp {
-    pub fn left_most_panel(&mut self, ctx:  &egui::Context){
+    pub fn left_most_panel(&mut self, ctx: &egui::Context) {
         egui::SidePanel::left("server_panel").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 if ui.button("Friends").clicked() {
@@ -267,7 +103,7 @@ impl DiscordApp {
                 }
                 if ui.button("Servers").clicked() {
                     self.draw_type = DrawMode::Servers;
-                    self.servers_fetch.request();
+                    self.append_job(Job::GetServers);
                 }
             });
             ui.separator();
@@ -279,47 +115,52 @@ impl DiscordApp {
                         }
                     }
                     DrawMode::Servers => {
-                        for server in &self.servers {
+                        let servers = self.shared_cache.servers.guard();
+                        for server in &*servers {
                             let response = ui.add(Label::new(&server.name)
                                 .sense(Sense::click()));
                             if response.clicked() {
-                                self.channels_fetch.request();
-                                self.selected_server_id = Some(server.id);
+                                self.selected_server_id = server.id;
                                 self.current_server = server.name.clone();
+                                let job = Job::GetChannels(GetChannels::new(server.id));
+                                self.append_job(job);
                             }
                         }
                     }
                 }
             });
         });
-
     }
-    pub fn left_inner_panel(&mut self, ctx:  &egui::Context){
+    pub fn left_inner_panel(&mut self, ctx: &egui::Context) {
         egui::SidePanel::left("channel_panel").show(ctx, |ui| {
             ui.heading(&self.current_server);
             ui.separator();
             egui::ScrollArea::vertical()
                 .scroll_bar_visibility(ScrollBarVisibility::VisibleWhenNeeded)
                 .auto_shrink([false, false])
-                .show(ui, |ui| { //show_rows
-                    for text in &self.channels.0 {
-                        let name = &text.name.to_owned().unwrap();
-                        let response = ui.add(Label::new(name).sense(Sense::click()));
+                .show(ui, |ui| {
+                    let channels = self.shared_cache.channels.guard(); //show_rows
+                    for text_channel in &*channels.0 {
+                        let name = text_channel.name.clone().unwrap();
+                        let response = ui.add(Label::new(name.clone()).sense(Sense::click()));
                         if response.clicked() {
-                            self.messages_fetch.request();
-                            self.selected_channel_id = Some(text.id.id());
+                            let channel_id = text_channel.id.get();
+                            let job = Job::GetMessages(GetMessages::new(channel_id, 100));
+                            self.current_channel = name;
+                            self.selected_channel_id = channel_id;
+                            self.append_job(job);
                         }
                     }
                     ui.separator();
-                    for voice in &self.channels.1 {
+                    for voice in &*channels.1 {
                         let name = &voice.name.to_owned().unwrap();
                         let response = ui.add(Label::new(name).sense(Sense::click()));
                     }
                 });
         });
     }
-    pub fn chat_panel(&mut self, ctx:  &egui::Context){
-        egui::TopBottomPanel::bottom("message_panel").show(ctx, |ui|{
+    pub fn chat_panel(&mut self, ctx: &egui::Context) {
+        egui::TopBottomPanel::bottom("message_panel").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 let input_field = egui::TextEdit::multiline(&mut self.input_text)
                     .min_size(Vec2::new(30.0, 30.0))
@@ -329,16 +170,16 @@ impl DiscordApp {
                 let submitted = ui.input(|i| {
                     i.key_pressed(egui::Key::Enter) && !i.modifiers.shift
                 });
-                if !self.input_text.is_empty() && self.selected_channel_id.is_some() && submitted {
+                if !self.input_text.is_empty() && self.selected_channel_id != 0 && submitted {
                     response.surrender_focus();
-                    println!("Sending message: {}", self.input_text);
-                    self.send_message_fetch.request();
+                    let job = Job::SendMessage(SendMessage::new(self.selected_channel_id, self.input_text.clone()));
+                    self.append_job(job);
                 }
                 if ui.button("Add file").clicked() {
-                    self.file_fetch.request();
+                    let job = Job::SelectFile;
+                    self.append_job(job);
                 }
             });
-
         });
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.heading(&self.current_channel);
@@ -346,17 +187,18 @@ impl DiscordApp {
 
             let scroll = egui::ScrollArea::vertical().auto_shrink([false, false]).stick_to_bottom(true);
             scroll.show(ui, |ui| { //show_rows
-                if self.messages.is_empty() {
+                let messages = self.shared_cache.messages.guard();
+                if messages.is_empty() {
                     //ignore attachments for now
                     return;
                 }
-                for msg in self.messages.iter().rev() {
+                for msg in messages.iter().rev() {
                     let text: String;
                     if msg.content.is_empty() {
                         if msg.attachments.is_empty() {
                             continue;
                         }
-                        text = msg.attachments[0].url.clone();
+                        text = format!("[{}] {}", msg.author.name, msg.attachments[0].url.clone());
                     } else {
                         text = format!("[{}] {}", msg.author.name, msg.content);
                     }
@@ -378,19 +220,17 @@ impl DiscordApp {
                     ui.separator();
                 }
             });
-
         });
     }
-    pub fn member_panel(&self, ctx:  &egui::Context){
+    pub fn member_panel(&self, ctx: &egui::Context) {
         egui::SidePanel::right("member_panel").show(ctx, |ui| {
-            ui.vertical(|ui| {
-
-            });
+            ui.vertical(|ui| {});
         });
     }
 }
 
 #[derive(PartialEq)]
-enum DrawMode{
-    Friends, Servers
+enum DrawMode {
+    Friends,
+    Servers,
 }
