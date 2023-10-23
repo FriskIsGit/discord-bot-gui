@@ -25,6 +25,7 @@ pub struct DiscordApp {
 
     selected_server_id: u64,
     selected_channel_id: u64,
+    reply_message_id: u64,
 }
 
 impl DiscordApp {
@@ -46,6 +47,7 @@ impl DiscordApp {
 
             selected_server_id: 0,
             selected_channel_id: 0,
+            reply_message_id: 0,
         }
     }
 
@@ -194,6 +196,7 @@ impl DiscordApp {
                     //ignore attachments for now
                     return;
                 }
+                let mut reply = None;
                 for msg in messages.iter().rev() {
                     let text: String;
                     if msg.content.is_empty() {
@@ -208,12 +211,12 @@ impl DiscordApp {
                     let response = ui.add(Label::new(&text).sense(Sense::click()));
                     response.context_menu(|ui| {
                         if ui.button("Reply").clicked() {
+                            reply = Some(msg.id.get());
                             ui.close_menu();
                         }
                         if ui.button("Copy text").clicked() {
-                            //ui.output().copied_text = text.clone();
-                            println!("{}", text);
-                            ui.close_menu(); //TODO: copy to clipboard(and make selectable?)
+                            ui.output_mut(|o| o.copied_text = text.clone());
+                            ui.close_menu(); //TODO: make selectable?
                         }
                         if ui.button("Delete message").clicked() {
                             let job = Job::DeleteMessage(DeleteMessage::new(msg.channel_id.get(), msg.id.get()));
@@ -222,6 +225,9 @@ impl DiscordApp {
                         }
                     });
                     ui.separator();
+                }
+                if let Some(id) = reply {
+                    self.reply_message_id = id;
                 }
             });
         });
@@ -246,6 +252,14 @@ impl DiscordApp {
                     ui.separator();
                 });
         });
+    }
+    fn strip_parameters(mut link: String) -> String {
+        let index = link.find('?');
+        if index.is_none() {
+            return link;
+        }
+        link.truncate(index.unwrap());
+        return link;
     }
 }
 
