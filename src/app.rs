@@ -221,7 +221,8 @@ impl DiscordApp {
                         if msg.attachments.is_empty() {
                             continue;
                         }
-                        text = format!("[{}] {}", msg.author.name, msg.attachments[0].url.clone());
+                        let link = Self::strip_parameters(msg.attachments[0].url.clone());
+                        text = format!("[{}] {}", msg.author.name, link);
                     } else {
                         text = format!("[{}] {}", msg.author.name, msg.content);
                     }
@@ -275,6 +276,10 @@ impl DiscordApp {
                     for member in &*members {
                         let response = ui.add(Label::new(&member.user.name).sense(Sense::click()));
                         response.context_menu(|ui| {
+                            if ui.button("Copy name").clicked() {
+                                ui.output_mut(|o| o.copied_text = member.user.name.clone());
+                                ui.close_menu()
+                            }
                             if ui.button("Copy ID").clicked() {
                                 ui.output_mut(|o| o.copied_text = member.user.id.get().to_string());
                                 ui.close_menu()
