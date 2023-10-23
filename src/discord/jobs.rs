@@ -7,6 +7,7 @@ pub enum Job {
     GetUserMessages(GetUserMessages),
     GetMembers(GetMembers),
     SendMessage(SendMessage),
+    EditMessage(EditMessage),
     DeleteMessage(DeleteMessage),
     SendFile(SendFile),
     CreateChannel(CreateChannel),
@@ -63,6 +64,17 @@ pub struct SendMessage {
 impl SendMessage {
     pub fn new(channel_id: u64, content: String) -> Self {
         Self{ channel_id, content }
+    }
+}
+
+pub struct EditMessage {
+    pub channel_id: u64,
+    pub message_id: u64,
+    pub new_content: String,
+}
+impl EditMessage {
+    pub fn new(channel_id: u64, message_id: u64, new_content: String) -> Self {
+        Self{ channel_id, message_id, new_content }
     }
 }
 

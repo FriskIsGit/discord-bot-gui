@@ -7,7 +7,7 @@ use std::io::Read;
 use std::io::BufReader;
 use std::thread;
 use native_dialog::FileDialog;
-use crate::discord::jobs::{DeleteMessage, GetChannels, GetMembers, GetMessages, Job, SendMessage};
+use crate::discord::jobs::{DeleteMessage, EditMessage, GetChannels, GetMembers, GetMessages, Job, SendMessage};
 use crate::discord::shared_cache::{ArcMutex, Queue, SharedCache};
 use crate::discord::twilight_client;
 
@@ -80,6 +80,9 @@ impl EventController{
             }
             Job::SendFile(file_send) => {}
             Job::CreateChannel(channel_create) => {}
+            Job::EditMessage(msg_edit) => {
+                self.edit_message(msg_edit)
+            }
         }
     }
     fn get_servers(&mut self) {
@@ -113,6 +116,29 @@ impl EventController{
         self.tokio.spawn(async move {
             let members = twilight_client::get_members(&client, member_fetch.server_id, member_fetch.limit).await;
             *cache.members.guard() = members;
+        });
+    }
+    fn edit_message(&self, edit: EditMessage) {
+        let client = self.client.clone();
+        let cache = self.shared_data.clone();
+        self.tokio.spawn(async move {
+            let success = twilight_client::edit_message(&client, edit.channel_id, edit.message_id, edit.new_content.clone()).await;
+            if !success {
+                return;
+            }
+            let mut messages = cache.messages.guard();
+            let mut index = 0;
+            let mut found = false;
+            for (i, msg) in messages.iter().enumerate() {
+                if msg.id == edit.message_id {
+                    index = i;
+                    found = true;
+                    break;
+                }
+            }
+            if found {
+                messages[index].content = edit.new_content;
+            }
         });
     }
     fn send_message(&self, msg_send: SendMessage) {

@@ -8,7 +8,7 @@ use egui;
 use egui::scroll_area::ScrollBarVisibility;
 use egui::{Label, Sense, TextBuffer, Vec2, Visuals};
 use twilight_model::guild::Member;
-use crate::discord::jobs::{DeleteMessage, GetMembers, GetMessages, Job, SendMessage};
+use crate::discord::jobs::{DeleteMessage, EditMessage, GetMembers, GetMessages, Job, SendMessage};
 use crate::discord::jobs::GetChannels;
 
 use crate::discord::shared_cache::{ArcMutex, Queue, SharedCache};
@@ -26,6 +26,8 @@ pub struct DiscordApp {
     selected_server_id: u64,
     selected_channel_id: u64,
     reply_message_id: u64,
+    edited_message_id: u64,
+    is_editing: bool,
 }
 
 impl DiscordApp {
@@ -48,6 +50,8 @@ impl DiscordApp {
             selected_server_id: 0,
             selected_channel_id: 0,
             reply_message_id: 0,
+            edited_message_id: 0,
+            is_editing: false,
         }
     }
 
@@ -175,9 +179,20 @@ impl DiscordApp {
                 if !self.input_text.is_empty() && self.selected_channel_id != 0 && submitted {
                     response.surrender_focus();
                     response.request_focus();
-                    let job = Job::SendMessage(SendMessage::new(self.selected_channel_id, self.input_text.clone()));
-                    self.append_job(job);
-                    self.input_text.truncate(0);
+                    if self.is_editing && self.edited_message_id != 0 && !self.input_text.is_empty() {
+                        let msg_edit = EditMessage::new(
+                            self.selected_channel_id,
+                            self.edited_message_id,
+                            self.input_text.to_owned(),
+                        );
+                        self.is_editing = false;
+                        self.append_job(Job::EditMessage(msg_edit));
+                        self.input_text.truncate(0);
+                    } else {
+                        let job = Job::SendMessage(SendMessage::new(self.selected_channel_id, self.input_text.clone()));
+                        self.append_job(job);
+                        self.input_text.truncate(0);
+                    }
                 }
                 if ui.button("Add file").clicked() {
                     let job = Job::SelectFile;
@@ -197,6 +212,9 @@ impl DiscordApp {
                     return;
                 }
                 let mut reply = None;
+                let mut edit_id = 0;
+                let mut is_editing = false;
+                let mut edited_text = "".into();
                 for msg in messages.iter().rev() {
                     let text: String;
                     if msg.content.is_empty() {
@@ -218,6 +236,12 @@ impl DiscordApp {
                             ui.output_mut(|o| o.copied_text = text.clone());
                             ui.close_menu(); //TODO: make selectable?
                         }
+                        if ui.button("Edit message").clicked() {
+                            is_editing = true;
+                            edit_id = msg.id.get();
+                            edited_text = msg.content.clone();
+                            ui.close_menu();
+                        }
                         if ui.button("Delete message").clicked() {
                             let job = Job::DeleteMessage(DeleteMessage::new(msg.channel_id.get(), msg.id.get()));
                             self.append_job(job);
@@ -228,6 +252,11 @@ impl DiscordApp {
                 }
                 if let Some(id) = reply {
                     self.reply_message_id = id;
+                }
+                if is_editing {
+                    self.is_editing = true;
+                    self.edited_message_id = edit_id;
+                    self.input_text = edited_text;
                 }
             });
         });
@@ -245,9 +274,12 @@ impl DiscordApp {
                     let members = self.shared_cache.members.guard();
                     for member in &*members {
                         let response = ui.add(Label::new(&member.user.name).sense(Sense::click()));
-                        if response.clicked() {
-
-                        }
+                        response.context_menu(|ui| {
+                            if ui.button("Copy ID").clicked() {
+                                ui.output_mut(|o| o.copied_text = member.user.id.get().to_string());
+                                ui.close_menu()
+                            }
+                        });
                     }
                     ui.separator();
                 });

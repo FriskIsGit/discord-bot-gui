@@ -79,6 +79,13 @@ pub async fn delete_message(client: &Client, channel_id: u64, message_id: u64) -
         .await.unwrap();
     response.status().is_success()
 }
+pub async fn edit_message(client: &Client, channel_id: u64, message_id: u64, new_content: String) -> bool {
+    let response = client.update_message(
+        Id::new(channel_id),
+        Id::new(message_id)
+    ).content(Some(new_content.as_str())).expect(VALIDATION_ERR).await.unwrap();
+    response.status().is_success()
+}
 pub async fn send_file(client: &Client, channel_id: u64, filename: String, bytes: Vec<u8>) -> Message {
     let attachment = &[Attachment::from_bytes(filename, bytes, 1)];
     let response = client.create_message(Id::new(channel_id))
