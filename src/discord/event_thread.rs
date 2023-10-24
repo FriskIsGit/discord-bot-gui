@@ -7,7 +7,7 @@ use std::io::Read;
 use std::io::BufReader;
 use std::thread;
 use native_dialog::FileDialog;
-use crate::discord::jobs::{DeleteMessage, EditMessage, GetChannels, GetMembers, GetMessages, Job, SendMessage};
+use crate::discord::jobs::{DeleteMessage, EditMessage, GetChannels, GetMembers, GetMessages, Job, SendFile, SendMessage};
 use crate::discord::shared_cache::{ArcMutex, Queue, SharedCache};
 use crate::discord::twilight_client;
 
@@ -78,7 +78,9 @@ impl EventController{
             Job::SelectFile => {
                 self.select_file()
             }
-            Job::SendFile(file_send) => {}
+            Job::SendFile(file_send) => {
+                self.file_upload(file_send)
+            }
             Job::CreateChannel(channel_create) => {}
             Job::EditMessage(msg_edit) => {
                 self.edit_message(msg_edit)
@@ -146,8 +148,12 @@ impl EventController{
         let client = self.client.clone();
         let cache = self.shared_data.clone();
         self.tokio.spawn(async move {
-            let message = twilight_client::send_message(&client, msg_send.channel_id, msg_send.content.as_str()).await;
-            *cache.msg_sent.guard() = Some(message.clone());
+            let message = twilight_client::send_message(
+                &client,
+                msg_send.channel_id,
+                msg_send.content.as_str(),
+                msg_send.reply_id
+            ).await;
             (*cache.messages.guard()).insert(0, message);
         });
     }
@@ -186,11 +192,27 @@ impl EventController{
                 Some(path) => path,
                 None => return,
             };
+            let file_name = path.file_name().expect("No filename").to_str().unwrap().to_string();
             let file = File::open(path).unwrap();
             let mut reader = BufReader::new(file);
             let mut bytes = Vec::new();
             reader.read_to_end(&mut bytes).expect("Couldn't read all bytes?");
             *cache.file_bytes.guard() = bytes;
+            *cache.file_name.guard() = file_name;
+        });
+    }
+    fn file_upload(&self, file_upload: SendFile) {
+        let client = self.client.clone();
+        let cache = self.shared_data.clone();
+        self.tokio.spawn(async move {
+            let msg_with_file = twilight_client::send_file(
+                &client,
+                file_upload.channel_id,
+                file_upload.filename,
+                file_upload.bytes
+            ).await;
+            let mut messages = cache.messages.guard();
+            messages.insert(0, msg_with_file);
         });
     }
     pub fn take_job(&self) -> Job {

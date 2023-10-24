@@ -67,10 +67,13 @@ pub async fn create_channel(client: &Client, guild_id: u64, name: String) -> Opt
     let messages_body = result_response.unwrap().text().await.expect(RESPONSE_BODY_ERR);
     Some(serde_json::from_str(messages_body.as_str()).expect(INSTANCE_ERR))
 }
-pub async fn send_message(client: &Client, channel_id: u64, content: &str) -> Message {
-    let response = client.create_message(Id::new(channel_id))
-        .content(content).expect(VALIDATION_ERR)
-        .await.unwrap();
+pub async fn send_message(client: &Client, channel_id: u64, content: &str, reply_id: Option<u64>) -> Message {
+    let mut new_msg = client.create_message(Id::new(channel_id))
+        .content(content).expect(VALIDATION_ERR);
+    if let Some(id) = reply_id {
+        new_msg = new_msg.reply(Id::new(id));
+    }
+    let response = new_msg.await.unwrap();
     let body = response.text().await.expect(RESPONSE_BODY_ERR);
     serde_json::from_str(body.as_str()).expect(INSTANCE_ERR)
 }

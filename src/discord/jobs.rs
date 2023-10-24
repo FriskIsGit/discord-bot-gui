@@ -60,10 +60,11 @@ impl GetMembers {
 pub struct SendMessage {
     pub channel_id: u64,
     pub content: String,
+    pub reply_id: Option<u64>,
 }
 impl SendMessage {
-    pub fn new(channel_id: u64, content: String) -> Self {
-        Self{ channel_id, content }
+    pub fn new(channel_id: u64, content: String, reply_id: Option<u64>) -> Self {
+        Self{ channel_id, content, reply_id}
     }
 }
 

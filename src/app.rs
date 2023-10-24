@@ -11,7 +11,7 @@ use egui::{ImageSource, Label, Sense, TextBuffer, Vec2, Visuals};
 use egui::ImageSource::Uri;
 use twilight_model::guild::Member;
 use crate::discord::event_thread::Ticker;
-use crate::discord::jobs::{DeleteMessage, EditMessage, GetMembers, GetMessages, Job, SendMessage};
+use crate::discord::jobs::{DeleteMessage, EditMessage, GetMembers, GetMessages, Job, SendFile, SendMessage};
 use crate::discord::jobs::GetChannels;
 
 use crate::discord::shared_cache::{ArcMutex, Queue, SharedCache};
@@ -32,6 +32,7 @@ pub struct DiscordApp {
     reply_message_id: u64,
     edited_message_id: u64,
     is_editing: bool,
+    images_pasted: usize,
 
     longest_render: Duration,
 }
@@ -57,6 +58,7 @@ impl DiscordApp {
             selected_channel_id: 0,
             reply_message_id: 0,
             edited_message_id: 0,
+            images_pasted: 0,
             is_editing: false,
 
             longest_render: Duration::from_nanos(1),
@@ -149,6 +151,13 @@ impl DiscordApp {
             if ui.button("Options").clicked() {
                 println!("options clicked");
             }
+            if ui.button("Placeholder}").clicked() {
+
+            }
+            if util::pasted_image(ctx) {
+                self.images_pasted += 1;
+            }
+            ui.label(format!("pastedimgs: {}", self.images_pasted));
         });
     }
     pub fn left_inner_panel(&mut self, ctx: &egui::Context) {
@@ -202,14 +211,29 @@ impl DiscordApp {
                         self.append_job(Job::EditMessage(msg_edit));
                         self.input_text.truncate(0);
                     } else {
-                        let job = Job::SendMessage(SendMessage::new(self.selected_channel_id, self.input_text.clone()));
-                        self.append_job(job);
-                        self.input_text.truncate(0);
+                        let job;
+                        let taken_text = std::mem::take(&mut self.input_text); // yoinked
+                        if self.reply_message_id == 0 {
+                            job = SendMessage::new(self.selected_channel_id, taken_text, None);
+                        } else {
+                            job = SendMessage::new(self.selected_channel_id, taken_text, Some(self.reply_message_id));
+                            self.reply_message_id = 0;
+                        }
+                        self.append_job(Job::SendMessage(job));
                     }
                 }
-                if ui.button("Add file").clicked() {
+                if ui.button("+").clicked() {
                     let job = Job::SelectFile;
                     self.append_job(job);
+                }
+                let mut file_bytes = self.shared_cache.file_bytes.guard();
+                let mut file_name = self.shared_cache.file_name.guard();
+                if !file_bytes.is_empty() && !file_name.is_empty() && self.selected_channel_id != 0 &&
+                    ui.button("Send").clicked() {
+                    let target_bytes = std::mem::take(&mut *file_bytes);
+                    let target_name = std::mem::take(&mut *file_name);
+                    let job = SendFile::new(self.selected_channel_id, target_name, target_bytes);
+                    self.append_job(Job::SendFile(job));
                 }
             });
         });
@@ -241,12 +265,9 @@ impl DiscordApp {
                         let link = &msg.attachments[0].url;
                         if util::is_domain_trusted(link) && util::is_supported_media(link) {
                             rendered_images += 1;
-                            let image = egui::Image::new(Uri(link.into()));
-                            let load_result = image.max_size(Vec2::new(200.0, 200.0))
-                                .load_for_size(ctx, Vec2::new(200.0, 200.0));
-                            if load_result.is_err() {
-                                panic!("image load failure");
-                            }
+
+                            ui.add(egui::Image::new(Uri(link.into()))
+                                .rounding(5.0));
                         }
                     }
                     response.context_menu(|ui| {
@@ -267,6 +288,16 @@ impl DiscordApp {
                             edit_id = msg.id.get();
                             edited_text = msg.content.clone();
                             ui.close_menu();
+                        }
+                        let _ = ui.button(format!("Attachments: {}", msg.attachments.len()));
+                        if msg.reference.is_some() {
+                            println!("msg ref is some");
+                            let id = msg.reference.clone().unwrap().message_id.unwrap();
+                            let _ = ui.button(format!("Replies: {}", id.to_string()));
+                        }
+                        if ui.button("Copy message ID").clicked() {
+                            ui.output_mut(|o| o.copied_text = msg.id.get().to_string());
+                            ui.close_menu(); //TODO: make selectable?
                         }
                         if ui.button("Delete message").clicked() {
                             let job = Job::DeleteMessage(DeleteMessage::new(msg.channel_id.get(), msg.id.get()));
@@ -306,6 +337,7 @@ impl DiscordApp {
                                 ui.output_mut(|o| o.copied_text = member.user.name.clone());
                                 ui.close_menu()
                             }
+                            let _ = ui.button("Open DM");
                             if ui.button("Copy ID").clicked() {
                                 ui.output_mut(|o| o.copied_text = member.user.id.get().to_string());
                                 ui.close_menu()

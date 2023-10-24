@@ -10,12 +10,13 @@ pub struct SharedCache {
 
     pub messages: ArcMutex<Vec<Message>>, // should be cached per channel
     pub members: ArcMutex<Vec<Member>>, // should be cached per server
+
     pub file_bytes: ArcMutex<Vec<u8>>,
+    pub file_name: ArcMutex<String>,
 
     pub rendered_msg_ids: ArcMutex<Vec<u64>>, // cache for UI
     // config: Config,
     // Temporary?
-    pub msg_sent: ArcMutex<Option<Message>>
 }
 impl SharedCache {
     pub fn new() -> Self{
@@ -26,7 +27,7 @@ impl SharedCache {
             members: ArcMutex::new(vec![]),
             file_bytes: ArcMutex::new(vec![]),
             rendered_msg_ids: ArcMutex::new(vec![]),
-            msg_sent: ArcMutex::new(None),
+            file_name: ArcMutex::new("".into()),
         }
     }
 }
