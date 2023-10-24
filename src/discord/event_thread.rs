@@ -83,6 +83,7 @@ impl EventController{
             Job::EditMessage(msg_edit) => {
                 self.edit_message(msg_edit)
             }
+            _ => {}
         }
     }
     fn get_servers(&mut self) {
@@ -192,7 +193,6 @@ impl EventController{
             *cache.file_bytes.guard() = bytes;
         });
     }
-
     pub fn take_job(&self) -> Job {
         let mut queue_guard = self.job_queue.guard();
         (*queue_guard).take()
@@ -200,7 +200,7 @@ impl EventController{
 }
 
 //non-async ticker/scheduler
-struct Ticker {
+pub struct Ticker {
     pub period: Duration,
     last_tick: Instant,
     ticked: usize,
@@ -223,5 +223,17 @@ impl Ticker {
         thread::sleep(self.period - delta);
         self.last_tick = Instant::now();
         self.ticked += 1;
+    }
+
+    // returns true only if period has elapsed, returning true acts as a reset
+    pub fn poll(&mut self) -> bool {
+        let now = Instant::now();
+        let delta = self.last_tick.elapsed();
+        if delta >= self.period {
+            self.last_tick = now;
+            self.ticked += 1;
+            return true;
+        }
+        return false;
     }
 }

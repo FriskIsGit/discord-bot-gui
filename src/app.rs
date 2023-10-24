@@ -2,16 +2,20 @@ use std::fs::File;
 use std::io::Read;
 use std::io::BufReader;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use crate::config::Config;
 
 use egui;
 use egui::scroll_area::ScrollBarVisibility;
-use egui::{Label, Sense, TextBuffer, Vec2, Visuals};
+use egui::{ImageSource, Label, Sense, TextBuffer, Vec2, Visuals};
+use egui::ImageSource::Uri;
 use twilight_model::guild::Member;
+use crate::discord::event_thread::Ticker;
 use crate::discord::jobs::{DeleteMessage, EditMessage, GetMembers, GetMessages, Job, SendMessage};
 use crate::discord::jobs::GetChannels;
 
 use crate::discord::shared_cache::{ArcMutex, Queue, SharedCache};
+use crate::discord::util;
 
 pub struct DiscordApp {
     shared_cache: Arc<SharedCache>,
@@ -28,6 +32,8 @@ pub struct DiscordApp {
     reply_message_id: u64,
     edited_message_id: u64,
     is_editing: bool,
+
+    longest_render: Duration,
 }
 
 impl DiscordApp {
@@ -52,6 +58,8 @@ impl DiscordApp {
             reply_message_id: 0,
             edited_message_id: 0,
             is_editing: false,
+
+            longest_render: Duration::from_nanos(1),
         }
     }
 
@@ -83,10 +91,16 @@ impl DiscordApp {
     }
 
     pub fn render(&mut self, ctx: &egui::Context) {
+        let now = Instant::now();
         self.left_most_panel(ctx);
         self.left_inner_panel(ctx);
         self.member_panel(ctx); //right most
         self.chat_panel(ctx); //middle
+        let elapsed = now.elapsed();
+        println!("{:?} {:?}", elapsed, self.longest_render);
+        if elapsed.gt(&self.longest_render) {
+            self.longest_render = elapsed;
+        }
     }
 
     pub fn append_job(&self, job: Job) {
@@ -142,10 +156,9 @@ impl DiscordApp {
             ui.heading(&self.current_server);
             ui.separator();
             egui::ScrollArea::vertical()
-                .scroll_bar_visibility(ScrollBarVisibility::VisibleWhenNeeded)
                 .auto_shrink([false, false])
-                .show(ui, |ui| {
-                    let channels = self.shared_cache.channels.guard(); //show_rows
+                .show(ui, |ui| { //show_rows
+                    let channels = self.shared_cache.channels.guard();
                     for text_channel in &*channels.0 {
                         let name = text_channel.name.clone().unwrap();
                         let response = ui.add(Label::new(name.clone()).sense(Sense::click()));
@@ -206,28 +219,36 @@ impl DiscordApp {
 
             let scroll = egui::ScrollArea::vertical().auto_shrink([false, false]).stick_to_bottom(true);
             scroll.show(ui, |ui| { //show_rows
-                let messages = self.shared_cache.messages.guard();
+                let mut messages = self.shared_cache.messages.guard();
                 if messages.is_empty() {
-                    //ignore attachments for now
                     return;
                 }
                 let mut reply = None;
                 let mut edit_id = 0;
                 let mut is_editing = false;
                 let mut edited_text = "".into();
-                for msg in messages.iter().rev() {
-                    let text: String;
-                    if msg.content.is_empty() {
-                        if msg.attachments.is_empty() {
-                            continue;
-                        }
-                        let link = Self::strip_parameters(msg.attachments[0].url.clone());
-                        text = format!("[{}] {}", msg.author.name, link);
-                    } else {
-                        text = format!("[{}] {}", msg.author.name, msg.content);
+                let mut rendered_images = 0;
+                let mut message_ids = self.shared_cache.rendered_msg_ids.guard();
+                for msg in messages.iter_mut() {
+                    if !msg.attachments.is_empty() {
+                        msg.attachments[0].url = util::strip_parameters(msg.attachments[0].url.to_owned());
                     }
-
+                }
+                for msg in messages.iter().rev() {
+                    let text = util::format_message(&msg);
                     let response = ui.add(Label::new(&text).sense(Sense::click()));
+                    if !msg.attachments.is_empty() && message_ids.contains(&msg.id.get())  {
+                        let link = &msg.attachments[0].url;
+                        if util::is_domain_trusted(link) && util::is_supported_media(link) {
+                            rendered_images += 1;
+                            let image = egui::Image::new(Uri(link.into()));
+                            let load_result = image.max_size(Vec2::new(200.0, 200.0))
+                                .load_for_size(ctx, Vec2::new(200.0, 200.0));
+                            if load_result.is_err() {
+                                panic!("image load failure");
+                            }
+                        }
+                    }
                     response.context_menu(|ui| {
                         if ui.button("Reply").clicked() {
                             reply = Some(msg.id.get());
@@ -235,6 +256,10 @@ impl DiscordApp {
                         }
                         if ui.button("Copy text").clicked() {
                             ui.output_mut(|o| o.copied_text = text.clone());
+                            ui.close_menu(); //TODO: make selectable?
+                        }
+                        if !msg.attachments.is_empty() && !(*message_ids).contains(&msg.id.get()) && ui.button("Load image").clicked() {
+                            message_ids.push(msg.id.get());
                             ui.close_menu(); //TODO: make selectable?
                         }
                         if ui.button("Edit message").clicked() {
@@ -251,6 +276,7 @@ impl DiscordApp {
                     });
                     ui.separator();
                 }
+                println!("RENDERED: {}", rendered_images);
                 if let Some(id) = reply {
                     self.reply_message_id = id;
                 }
@@ -289,14 +315,6 @@ impl DiscordApp {
                     ui.separator();
                 });
         });
-    }
-    fn strip_parameters(mut link: String) -> String {
-        let index = link.find('?');
-        if index.is_none() {
-            return link;
-        }
-        link.truncate(index.unwrap());
-        return link;
     }
 }
 
