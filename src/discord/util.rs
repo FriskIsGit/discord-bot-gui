@@ -1,3 +1,4 @@
+use egui::Event;
 use twilight_model::channel::Message;
 
 const CDN_DISCORD_DOMAIN: &str = "https://cdn.discordapp.com";
@@ -37,6 +38,23 @@ pub fn format_message(msg: &Message) -> String{
 }
 pub fn is_domain_trusted(link: &String) -> bool {
     link.starts_with(CDN_DISCORD_DOMAIN) || link.starts_with(MEDIA_TENOR)
+}
+pub fn pasted_image(ctx: &egui::Context) -> bool {
+    return ctx.input(|i| {
+        for key in &i.events {
+            match key {
+                Event::Paste(_) => {
+                    return false;
+                }
+                Event::Key {key, pressed, repeat, modifiers} => {
+                    return key == &egui::Key::V && *pressed && modifiers.ctrl &&
+                        !*repeat && (modifiers.command || modifiers.mac_cmd);
+                }
+                _ => {}
+            }
+        }
+        return false;
+    });
 }
 pub fn is_supported_media(link: &String) -> bool {
     for format in SUPPORTED_MEDIA {
