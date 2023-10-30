@@ -151,13 +151,11 @@ impl DiscordApp {
             if ui.button("Options").clicked() {
                 println!("options clicked");
             }
-            if ui.button("Placeholder}").clicked() {
 
-            }
             if util::pasted_image(ctx) {
                 self.images_pasted += 1;
             }
-            ui.label(format!("pastedimgs: {}", self.images_pasted));
+            ui.label(format!("Pasted imgs: {}", self.images_pasted));
         });
     }
     pub fn left_inner_panel(&mut self, ctx: &egui::Context) {
@@ -267,6 +265,8 @@ impl DiscordApp {
                             rendered_images += 1;
 
                             ui.add(egui::Image::new(Uri(link.into()))
+                                .fit_to_original_size(0.5)
+                                .max_size(Vec2::new(350f32, 350f32))
                                 .rounding(5.0));
                         }
                     }

@@ -2,8 +2,9 @@ use egui::Event;
 use twilight_model::channel::Message;
 
 const CDN_DISCORD_DOMAIN: &str = "https://cdn.discordapp.com";
+const MEDIA_DISCORD_DOMAIN: &str = "https://media.discordapp.com";
 const MEDIA_TENOR: &str = "https://media.tenor.com";
-const SUPPORTED_MEDIA: [&str; 4] = ["png", "jpg", "jpeg", "gif"];
+const SUPPORTED_MEDIA: [&str; 5] = ["png", "jpg", "jpeg", "gif", "webp"];
 
 pub fn strip_parameters(mut link: String) -> String {
     let index = link.find('?');
@@ -37,7 +38,9 @@ pub fn format_message(msg: &Message) -> String{
     }
 }
 pub fn is_domain_trusted(link: &String) -> bool {
-    link.starts_with(CDN_DISCORD_DOMAIN) || link.starts_with(MEDIA_TENOR)
+    link.starts_with(CDN_DISCORD_DOMAIN)
+        || link.starts_with(MEDIA_TENOR)
+        || link.starts_with(MEDIA_DISCORD_DOMAIN)
 }
 pub fn pasted_image(ctx: &egui::Context) -> bool {
     return ctx.input(|i| {
@@ -58,7 +61,7 @@ pub fn pasted_image(ctx: &egui::Context) -> bool {
 }
 pub fn is_supported_media(link: &String) -> bool {
     for format in SUPPORTED_MEDIA {
-        if link.ends_with(format) {
+        if link.to_lowercase().ends_with(format) {
             return true;
         }
     }
