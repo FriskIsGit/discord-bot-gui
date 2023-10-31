@@ -1,6 +1,6 @@
 use serde::{Deserialize, Deserializer, Serialize};
 use twilight_model::channel::Channel;
-use twilight_model::guild::{Permissions};
+use twilight_model::guild::{GuildPreview, Permissions};
 use twilight_model::id::Id;
 use twilight_model::id::marker::GuildMarker;
 use twilight_model::user::CurrentUserGuild;
@@ -18,6 +18,8 @@ pub struct Server {
 
     pub text_channels: Vec<Channel>,
     pub voice_channels: Vec<Channel>,
+
+    pub preview: Option<GuildPreview>,
 }
 
 impl Server{
@@ -31,6 +33,7 @@ impl Server{
             features: guild.features,
             text_channels: vec![],
             voice_channels: vec![],
+            preview: None,
         }
     }
     pub fn prefetch(&self) {

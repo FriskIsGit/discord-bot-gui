@@ -2,7 +2,6 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use twilight_model::channel::{Channel, Message};
 use twilight_model::guild::Member;
 use crate::discord::guild::Server;
-use crate::discord::jobs::Job;
 
 pub struct SharedCache {
     pub servers: ArcMutex<Vec<Server>>,

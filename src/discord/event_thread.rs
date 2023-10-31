@@ -7,7 +7,7 @@ use std::io::Read;
 use std::io::BufReader;
 use std::thread;
 use native_dialog::FileDialog;
-use crate::discord::jobs::{DeleteMessage, EditMessage, GetChannels, GetMembers, GetMessages, Job, SendFile, SendMessage};
+use crate::discord::jobs::{CreateChannel, DeleteChannel, DeleteMessage, EditMessage, GetChannels, GetGuildPreview, GetMembers, GetMessages, Job, SendFile, SendMessage};
 use crate::discord::shared_cache::{ArcMutex, Queue, SharedCache};
 use crate::discord::twilight_client;
 
@@ -66,6 +66,9 @@ impl EventController{
             Job::GetUserMessages(user_msg_fetch) => {
 
             }
+            Job::GetGuildPreview(guild_preview) => {
+                self.guild_preview(guild_preview);
+            }
             Job::GetMembers(member_fetch) => {
                 self.get_members(member_fetch)
             }
@@ -81,7 +84,12 @@ impl EventController{
             Job::SendFile(file_send) => {
                 self.file_upload(file_send)
             }
-            Job::CreateChannel(channel_create) => {}
+            Job::CreateChannel(channel_create) => {
+                self.create_channel(channel_create);
+            }
+            Job::DeleteChannel(channel_delete) => {
+                self.delete_channel(channel_delete);
+            }
             Job::EditMessage(msg_edit) => {
                 self.edit_message(msg_edit)
             }
@@ -218,6 +226,42 @@ impl EventController{
     pub fn take_job(&self) -> Job {
         let mut queue_guard = self.job_queue.guard();
         (*queue_guard).take()
+    }
+    fn create_channel(&self, channel_create: CreateChannel) {
+        let client = self.client.clone();
+        self.tokio.spawn(async move {
+            let channel_option = twilight_client::create_channel(
+                &client,
+                channel_create.server_id,
+                channel_create.name
+            ).await;
+        });
+    }
+    fn delete_channel(&self, delete_channel: DeleteChannel) {
+        let client = self.client.clone();
+        self.tokio.spawn(async move {
+            let channel_option = twilight_client::delete_channel(
+                &client,
+                delete_channel.channel_id,
+            ).await;
+        });
+    }
+    fn guild_preview(&self, guild_preview: GetGuildPreview) {
+        let client = self.client.clone();
+        let cache = self.shared_data.clone();
+        self.tokio.spawn(async move {
+            let preview = twilight_client::get_guild_preview(
+                &client,
+                guild_preview.server_id,
+            ).await;
+            let mut servers = cache.servers.guard();
+            for server in servers.iter_mut() {
+                if server.id == guild_preview.server_id {
+                    server.preview = Some(preview);
+                    break;
+                }
+            }
+        });
     }
 }
 

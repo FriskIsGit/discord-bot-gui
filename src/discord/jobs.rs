@@ -1,7 +1,7 @@
-
 pub enum Job {
     GetServers,
     SelectFile,
+    GetGuildPreview(GetGuildPreview),
     GetChannels(GetChannels),
     GetMessages(GetMessages),
     GetUserMessages(GetUserMessages),
@@ -11,6 +11,7 @@ pub enum Job {
     DeleteMessage(DeleteMessage),
     SendFile(SendFile),
     CreateChannel(CreateChannel),
+    DeleteChannel(DeleteChannel),
 }
 impl Job{
 
@@ -107,5 +108,23 @@ pub struct CreateChannel {
 impl CreateChannel {
     pub fn new(server_id: u64, name: String) -> Self {
         Self{ server_id, name }
+    }
+}
+
+pub struct DeleteChannel {
+    pub channel_id: u64,
+}
+impl DeleteChannel {
+    pub fn new(channel_id: u64) -> Self {
+        Self{ channel_id }
+    }
+}
+
+pub struct GetGuildPreview {
+    pub server_id: u64,
+}
+impl GetGuildPreview {
+    pub fn new(server_id: u64) -> Self {
+        Self{ server_id }
     }
 }

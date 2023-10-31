@@ -11,7 +11,7 @@ use egui::{ImageSource, Label, Sense, TextBuffer, Vec2, Visuals};
 use egui::ImageSource::Uri;
 use twilight_model::guild::Member;
 use crate::discord::event_thread::Ticker;
-use crate::discord::jobs::{DeleteMessage, EditMessage, GetMembers, GetMessages, Job, SendFile, SendMessage};
+use crate::discord::jobs::{DeleteMessage, EditMessage, GetGuildPreview, GetMembers, GetMessages, Job, SendFile, SendMessage};
 use crate::discord::jobs::GetChannels;
 
 use crate::discord::shared_cache::{ArcMutex, Queue, SharedCache};
@@ -32,6 +32,7 @@ pub struct DiscordApp {
     reply_message_id: u64,
     edited_message_id: u64,
     is_editing: bool,
+    options_open: bool,
     images_pasted: usize,
 
     longest_render: Duration,
@@ -58,8 +59,9 @@ impl DiscordApp {
             selected_channel_id: 0,
             reply_message_id: 0,
             edited_message_id: 0,
-            images_pasted: 0,
             is_editing: false,
+            options_open: false,
+            images_pasted: 0,
 
             longest_render: Duration::from_nanos(1),
         }
@@ -99,7 +101,7 @@ impl DiscordApp {
         self.member_panel(ctx); //right most
         self.chat_panel(ctx); //middle
         let elapsed = now.elapsed();
-        println!("{:?} {:?}", elapsed, self.longest_render);
+        //println!("{:?} {:?}", elapsed, self.longest_render);
         if elapsed.gt(&self.longest_render) {
             self.longest_render = elapsed;
         }
@@ -120,7 +122,10 @@ impl DiscordApp {
                 }
                 if ui.button("Servers").clicked() {
                     self.draw_type = DrawMode::Servers;
-                    self.append_job(Job::GetServers);
+                    if self.shared_cache.servers.guard().is_empty() {
+                        println!("Fetching servers..");
+                        self.append_job(Job::GetServers);
+                    }
                 }
             });
             ui.separator();
@@ -139,9 +144,27 @@ impl DiscordApp {
                             if response.clicked() {
                                 self.selected_server_id = server.id;
                                 self.current_server = server.name.clone();
-                                let job = Job::GetChannels(GetChannels::new(server.id));
-                                self.append_job(job);
+                                let channel_job = GetChannels::new(server.id);
+                                let preview_job = GetGuildPreview::new(server.id);
+                                self.append_job(Job::GetChannels(channel_job));
+                                self.append_job(Job::GetGuildPreview(preview_job));
                             }
+                            response.context_menu(|ui| {
+                                if ui.button("Leave server (todo)").clicked() {
+                                    ui.close_menu();
+                                }
+                                if ui.button("Server options (todo)").clicked() {
+                                    ui.close_menu();
+                                }
+                                if ui.button("Copy server ID").clicked() {
+                                    ui.output_mut(|o| o.copied_text = server.id.to_string());
+                                    ui.close_menu();
+                                }
+                                if let Some(preview) = &server.preview {
+                                    let _ = ui.button(format!("Member count: {}", preview.approximate_member_count));
+                                }
+
+                            });
                         }
                     }
                 }
@@ -149,9 +172,17 @@ impl DiscordApp {
             // Options should be placed in the left bottom corner of this panel
             ui.separator();
             if ui.button("Options").clicked() {
-                println!("options clicked");
+                self.options_open = true;
             }
+            let window = egui::Window::new("Settings")
+                .open(&mut self.options_open)
+                .default_size(Vec2::new(100.0, 200.0))
+                .resizable(true);
 
+            window.show(ctx, |ui| {
+                ui.menu_button("Time zone", |ui| {
+                });
+            });
             if util::pasted_image(ctx) {
                 self.images_pasted += 1;
             }
@@ -180,7 +211,12 @@ impl DiscordApp {
                     ui.separator();
                     for voice in &*channels.1 {
                         let name = &voice.name.to_owned().unwrap();
-                        let response = ui.add(Label::new(name).sense(Sense::click()));
+                        let ui_name = format!("{} [{:?}/{}]", name, voice.member_count.unwrap_or(0), voice.user_limit.unwrap());
+                        let response = ui.add(Label::new(ui_name).sense(Sense::click()));
+                        response.context_menu(|ui| {
+                            let _ = ui.button("Join (todo)");
+                            let _ = ui.button("Edit (todo)");
+                        });
                     }
                 });
         });
@@ -291,7 +327,6 @@ impl DiscordApp {
                         }
                         let _ = ui.button(format!("Attachments: {}", msg.attachments.len()));
                         if msg.reference.is_some() {
-                            println!("msg ref is some");
                             let id = msg.reference.clone().unwrap().message_id.unwrap();
                             let _ = ui.button(format!("Replies: {}", id.to_string()));
                         }
@@ -307,7 +342,6 @@ impl DiscordApp {
                     });
                     ui.separator();
                 }
-                println!("RENDERED: {}", rendered_images);
                 if let Some(id) = reply {
                     self.reply_message_id = id;
                 }

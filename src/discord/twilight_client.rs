@@ -1,7 +1,6 @@
 use twilight_http::Client;
-use twilight_http::request::AuditLogReason;
 use twilight_model::channel::{Channel, ChannelType, Message};
-use twilight_model::guild::Member;
+use twilight_model::guild::{GuildPreview, Member};
 use twilight_model::http::attachment::Attachment;
 use twilight_model::id::Id;
 use twilight_model::user::CurrentUserGuild;
@@ -64,8 +63,16 @@ pub async fn create_channel(client: &Client, guild_id: u64, name: String) -> Opt
     if result_response.is_err() {
         return None;
     }
-    let messages_body = result_response.unwrap().text().await.expect(RESPONSE_BODY_ERR);
-    Some(serde_json::from_str(messages_body.as_str()).expect(INSTANCE_ERR))
+    let response_body = result_response.unwrap().text().await.expect(RESPONSE_BODY_ERR);
+    Some(serde_json::from_str(response_body.as_str()).expect(INSTANCE_ERR))
+}
+pub async fn delete_channel(client: &Client, channel_id: u64) -> Option<Channel> {
+    let result_response = client.delete_channel(Id::new(channel_id)).await;
+    if result_response.is_err() {
+        return None;
+    }
+    let response_body = result_response.unwrap().text().await.expect(RESPONSE_BODY_ERR);
+    Some(serde_json::from_str(response_body.as_str()).expect(INSTANCE_ERR))
 }
 pub async fn send_message(client: &Client, channel_id: u64, content: &str, reply_id: Option<u64>) -> Message {
     let mut new_msg = client.create_message(Id::new(channel_id))
@@ -94,6 +101,11 @@ pub async fn send_file(client: &Client, channel_id: u64, filename: String, bytes
     let response = client.create_message(Id::new(channel_id))
         .attachments(attachment).expect(VALIDATION_ERR)
         .await.unwrap();
+    let body = response.text().await.expect(RESPONSE_BODY_ERR);
+    serde_json::from_str(body.as_str()).expect(INSTANCE_ERR)
+}
+pub async fn get_guild_preview(client: &Client, server_id: u64) -> GuildPreview {
+    let response = client.guild_preview(Id::new(server_id)).await.unwrap();
     let body = response.text().await.expect(RESPONSE_BODY_ERR);
     serde_json::from_str(body.as_str()).expect(INSTANCE_ERR)
 }
